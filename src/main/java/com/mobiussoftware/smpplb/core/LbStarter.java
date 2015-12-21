@@ -5,6 +5,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Properties;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -36,9 +38,13 @@ public class LbStarter {
 
 	}
 	
+	Timer timer;
+	long lastupdate = 0;
+	
 	public void start(final String configurationFileLocation){
 		
 		File file = new File(configurationFileLocation);
+		lastupdate = file.lastModified();
         FileInputStream fileInputStream = null;
         try {
         	fileInputStream = new FileInputStream(file);
@@ -46,7 +52,7 @@ public class LbStarter {
 			throw new IllegalArgumentException("the configuration file location " + configurationFileLocation + " does not exists !");
 		}
         
-        Properties properties = new Properties(System.getProperties());
+        final Properties properties = new Properties(System.getProperties());
         try {
 			properties.load(fileInputStream);
 		} catch (IOException e) {
@@ -60,7 +66,34 @@ public class LbStarter {
 		}
         //must reload property file in period 
         
-        
+        timer = new Timer();
+		timer.scheduleAtFixedRate(new TimerTask() {
+			public void run() {
+				File conf = new File(configurationFileLocation);
+				if(lastupdate < conf.lastModified()) {
+					lastupdate = conf.lastModified();
+					logger.info("Configuration file changed, applying changes.");
+					FileInputStream fileInputStream = null;
+					try {
+						
+							fileInputStream = new FileInputStream(conf);
+							properties.load(fileInputStream);
+							logger.info("Changes applied.");
+						
+					} catch (Exception e) {
+						logger.warn("Problem reloading configuration " + e);
+					} finally {
+						if(fileInputStream != null) {
+							try {
+								fileInputStream.close();
+							} catch (Exception e) {
+								logger.error("Problem closing stream " + e);
+							}
+						}
+					}
+				}
+			}
+		}, 3000, 2000);
         
         
         
