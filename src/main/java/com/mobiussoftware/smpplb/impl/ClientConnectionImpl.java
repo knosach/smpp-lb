@@ -1,16 +1,19 @@
 package com.mobiussoftware.smpplb.impl;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.SSLEngine;
-
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.handler.ssl.SslHandler;
+import org.jboss.netty.util.internal.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,19 +42,19 @@ public class ClientConnectionImpl implements ClientConnection
 	private static final Logger logger = LoggerFactory.getLogger(ClientConnectionImpl.class);
 	
     private Channel channel;
-	public Channel getChannel() {
-		return channel;
-	}
-
 	private ClientBootstrap clientBootstrap;
     private ClientConnectionHandlerImpl clientConnectionHandler;
     private SmppSessionConfiguration config;
     private final PduTranscoder transcoder;
     private AtomicInteger sequenceNumberGenerator = new AtomicInteger(1);
     private ClientState clientState=ClientState.INITIAL;
-    private LbClientListener lbClientListener;
+	private LbClientListener lbClientListener;
     private Long sessionId;
-    private NioClientSocketChannelFactory connectionFactory;
+    private Map<Integer, TimerData> paketMap =  new ConcurrentHashMap <Integer, TimerData>();
+    
+    private ScheduledExecutorService monitorExecutor;
+ 
+    private long timeoutResponse;
 
     public enum ClientState 
     {    	
@@ -59,16 +62,18 @@ public class ClientConnectionImpl implements ClientConnection
     }
     
     
-	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener) 
+	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, long timeoutResponse) 
 	{
+		this.timeoutResponse = timeoutResponse;
+		this.monitorExecutor = monitorExecutor;
 		  this.sessionId = sessionId;
 		  this.config = config;
 		  this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 		  this.lbClientListener=clientListener;
-		  this.connectionFactory = new NioClientSocketChannelFactory();
+		  
 		  this.clientConnectionHandler = new ClientConnectionHandlerImpl(this);	
 		  
-          this.clientBootstrap = new ClientBootstrap(connectionFactory);
+          this.clientBootstrap = new ClientBootstrap(new NioClientSocketChannelFactory());
           if (config.isUseSsl()) 
           {
       	    SslConfiguration sslConfig = config.getSslConfiguration();
@@ -118,38 +123,39 @@ public class ClientConnectionImpl implements ClientConnection
 	public void bind()
 	{
 		//CREATE PACKET
-		 BaseBind bind = null;
+		 BaseBind packet = null;
 	        if (config.getType() == SmppBindType.TRANSCEIVER) 
-	            bind = new BindTransceiver();
+	        	packet = new BindTransceiver();
 	        else if (config.getType() == SmppBindType.RECEIVER)
-	            bind = new BindReceiver();
+	        	packet = new BindReceiver();
 	        else if (config.getType() == SmppBindType.TRANSMITTER)
-	            bind = new BindTransmitter();
+	        	packet = new BindTransmitter();
 
-	        bind.setSystemId(config.getSystemId());
-	        bind.setPassword(config.getPassword());
-	        bind.setSystemType(config.getSystemType());
-	        bind.setInterfaceVersion(config.getInterfaceVersion());
-	        bind.setAddressRange(config.getAddressRange());
+	        packet.setSystemId(config.getSystemId());
+	        packet.setPassword(config.getPassword());
+	        packet.setSystemType(config.getSystemType());
+	        packet.setInterfaceVersion(config.getInterfaceVersion());
+	        packet.setAddressRange(config.getAddressRange());
 	        // assign the next PDU sequence 
 	        sequenceNumberGenerator.compareAndSet(Integer.MAX_VALUE, 1);
-	        bind.setSequenceNumber(sequenceNumberGenerator.getAndIncrement());
+	        packet.setSequenceNumber(sequenceNumberGenerator.getAndIncrement());
   
 	        ChannelBuffer buffer = null;
 			try {
-				buffer = transcoder.encode(bind);
+				buffer = transcoder.encode(packet);
 				
 			} catch (UnrecoverablePduException | RecoverablePduException e) {
 				logger.error("Encode error: ", e);
 			}
+			paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		    channel.write(buffer);
-		    
 		    clientState=ClientState.BINDING;			
-		    
+   
 	}
 
 	@Override
-	public void packetReceived(Pdu packet) {
+	public void packetReceived(Pdu packet) 
+	{
 		switch (clientState) {
 
 		case INITIAL:
@@ -178,9 +184,11 @@ public class ClientConnectionImpl implements ClientConnection
 				logger.error("Received invalid packet in binding state, packet type: " + packet.getCommandId());
 			else {
 				if (packet.getCommandStatus() == SmppConstants.STATUS_OK) {
-
+					
+					if(paketMap.containsKey(packet.getSequenceNumber()))
+						paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
+					
 					lbClientListener.bindSuccesfull(sessionId, packet);
-					logger.info("Bound succesfully");
 					clientState = ClientState.BOUND;
 
 				} else {
@@ -198,19 +206,33 @@ public class ClientConnectionImpl implements ClientConnection
 		case BOUND:
 			correctPacket = false;
 			switch (packet.getCommandId()) {
+			
 			case SmppConstants.CMD_ID_CANCEL_SM_RESP:
 			case SmppConstants.CMD_ID_DATA_SM_RESP:
 			case SmppConstants.CMD_ID_QUERY_SM_RESP:
 			case SmppConstants.CMD_ID_REPLACE_SM_RESP:
 			case SmppConstants.CMD_ID_SUBMIT_SM_RESP:
 			case SmppConstants.CMD_ID_SUBMIT_MULTI_RESP:
-			case SmppConstants.CMD_ID_ENQUIRE_LINK:
 			case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
+				
+				if(paketMap.containsKey(packet.getSequenceNumber()))
+					paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);	
+				
 			case SmppConstants.CMD_ID_GENERIC_NACK:
+
 				correctPacket = true;
-				logger.info("Get SMPP response");
 				this.lbClientListener.smppEntityResponse(sessionId, packet);
+
 				break;
+				
+			case SmppConstants.CMD_ID_DATA_SM:
+			case SmppConstants.CMD_ID_DELIVER_SM:
+			case SmppConstants.CMD_ID_ENQUIRE_LINK:
+				correctPacket = true;
+				this.lbClientListener.smppEntityRequestFromServer(sessionId, packet);
+				
+				break;
+
 			}
 			if (!correctPacket){
 				logger.error("Received invalid packet in bound state, packet type: " + packet.getCommandId());
@@ -227,11 +249,14 @@ public class ClientConnectionImpl implements ClientConnection
 			if (!correctPacket)
 				logger.error("Received invalid packet in unbinding state,packet type:" + packet.getCommandId());
 			else {
-				logger.info("Unbind succesfully");
-				this.lbClientListener.unbindSuccesfull(sessionId, packet);
-				/////is it correct?////////////////////////////////////////////////////////////////////////
-				channel.close();
+
 				
+				this.lbClientListener.unbindSuccesfull(sessionId, packet);
+				if(paketMap.containsKey(packet.getSequenceNumber()))
+					paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);	
+///////////////////is it correct//////////////////////////////////////////////////
+				paketMap.clear();
+				channel.close();
 				clientState = ClientState.CLOSED;
 			}
 			break;
@@ -242,7 +267,8 @@ public class ClientConnectionImpl implements ClientConnection
 	}
 	
 	@Override
-	public void sendUnbindRequest(Pdu packet){
+	public void sendUnbindRequest(Pdu packet)
+	{
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -251,13 +277,16 @@ public class ClientConnectionImpl implements ClientConnection
 		} catch (UnrecoverablePduException | RecoverablePduException e) {
 			logger.error("Encode error: ", e);
 		}
+		if(packet.getCommandId()!=SmppConstants.CMD_ID_GENERIC_NACK)
+		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
 		clientState = ClientState.UNBINDING;
 		
 	}
 	
 	@Override
-	public void sendSmppRequest(Pdu packet) {
+	public void sendSmppRequest(Pdu packet) 
+	{
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -266,8 +295,59 @@ public class ClientConnectionImpl implements ClientConnection
 		} catch (UnrecoverablePduException | RecoverablePduException e) {
 			logger.error("Encode error: ", e);
 		}
+	
+		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
-		
 	}
 	
+	public void sendSmppResponse(Pdu packet) {
+		ChannelBuffer buffer = null;
+		try {
+			buffer = transcoder.encode(packet);
+			
+		} catch (UnrecoverablePduException | RecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}
+		channel.write(buffer);
+	}
+
+	@Override
+	public void requestTimeout(Pdu packet) 
+	{
+		switch(packet.getCommandId()){
+		case SmppConstants.CMD_ID_BIND_RECEIVER:
+		case SmppConstants.CMD_ID_BIND_TRANSCEIVER:
+		case SmppConstants.CMD_ID_BIND_TRANSMITTER:
+			
+			if(!paketMap.containsKey(packet.getSequenceNumber()))
+			logger.info("We take bind response in binding time");
+		else
+			logger.info("We did NOT take bind response in binding time");
+		
+		break;
+		
+		case SmppConstants.CMD_ID_CANCEL_SM:
+        case SmppConstants.CMD_ID_DATA_SM:
+        case SmppConstants.CMD_ID_QUERY_SM:
+        case SmppConstants.CMD_ID_REPLACE_SM:
+        case SmppConstants.CMD_ID_SUBMIT_SM:
+        case SmppConstants.CMD_ID_SUBMIT_MULTI:
+        case SmppConstants.CMD_ID_ENQUIRE_LINK:
+        
+        	if(!paketMap.containsKey(packet.getSequenceNumber()))
+        		logger.info("We take SMPP response from server in time");
+    		else
+    			logger.info("We did NOT take SMPP response from server in time");
+			break;
+			
+		case SmppConstants.CMD_ID_UNBIND:
+			
+			if(!paketMap.containsKey(packet.getSequenceNumber()))
+				logger.info("We take unbind response in unbinding time");
+			else
+				logger.info("We did NOT take unbind response in unbinding time");
+			
+			break;
+		}
+	}
 }

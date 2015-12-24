@@ -8,5 +8,6 @@ public interface LbClientListener {
 	void bindFailed(long sessionID, Pdu packet);
 	void unbindSuccesfull(long sessionID, Pdu packet);
 	void smppEntityResponse(Long sessionId, Pdu packet);
+	void smppEntityRequestFromServer(Long sessionId, Pdu packet);
 
 }

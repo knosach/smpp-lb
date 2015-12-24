@@ -1,6 +1,8 @@
 package com.mobiussoftware.smpplb.impl;
 
 import java.util.Properties;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 import javax.net.ssl.SSLEngine;
 
@@ -25,17 +27,21 @@ public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
     private ChannelGroup channels;
     private SmppServer server;
     private LbServerListener lbServerListener;
+    private Properties properties;
+    private ScheduledExecutorService monitorExecutor  = Executors.newScheduledThreadPool(16);
 
     public ServerChannelConnector(ChannelGroup channels, SmppServer smppServer, Properties properties) 
     {
         this.channels = channels;
         this.server = smppServer;
-        this.lbServerListener = new LbDispatcher(properties);
+        this.lbServerListener = new LbDispatcher(properties, monitorExecutor);
+        this.properties = properties;
     }
 
     @Override
     public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception 
     {
+ 
         Channel channel = e.getChannel();
         channels.add(channel);       
 
@@ -51,14 +57,14 @@ public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
 
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(new DefaultPduTranscoder(new DefaultPduTranscoderContext())));
 
-        ServerConnectionImpl serverConnectionImpl = new ServerConnectionImpl(server.nextSessionId(),channel,lbServerListener);
+        ServerConnectionImpl serverConnectionImpl = new ServerConnectionImpl(server.nextSessionId(),channel,lbServerListener, properties, monitorExecutor);
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, new ServerConnectionHandlerImpl(serverConnectionImpl));
   
     }
 
     @Override
-    public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-
+    public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception 
+    {
     	channels.remove(e.getChannel());
     	this.server.getCounters().incrementChannelDisconnectsAndGet();
     }

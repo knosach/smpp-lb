@@ -5,6 +5,7 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -23,37 +24,42 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	
 	private Map<Long, ServerConnectionImpl> serverSessions = new ConcurrentHashMap<Long, ServerConnectionImpl>();
 	private Map<Long, ClientConnectionImpl> clientSessions = new ConcurrentHashMap<Long, ClientConnectionImpl>();
+	
 	private RemoteServer [] remoteServers;
 	private AtomicInteger i = new AtomicInteger(0);
-	
-
+	private long timeoutResponse;
+	private ScheduledExecutorService monitorExecutor; 
 	private ExecutorService handlerService = Executors.newCachedThreadPool();
 	
-	public LbDispatcher(Properties properties){
-
+	public LbDispatcher(Properties properties, ScheduledExecutorService monitorExecutor)
+	{
+		this.monitorExecutor = monitorExecutor;
+		this.timeoutResponse = Long.parseLong(properties.getProperty("timeoutResponse"));
+		
 		String [] s = properties.getProperty("remoteServers").split(",");
 		remoteServers = new RemoteServer[s.length];
 		String [] sTmp = new String[2];
-		for(int i = 0; i < s.length; i++){
+		for(int i = 0; i < s.length; i++)
+		{
 			sTmp = s[i].split(":");
 			remoteServers[i] = new RemoteServer(sTmp[0].trim(),Integer.parseInt(sTmp[1].trim()));
 			System.out.println(remoteServers[i]);
 		}
-
 	}
 
 	@Override
-	public void bindRequested(Long sessionId, ServerConnectionImpl serverConnection)  
+	public void bindRequested(Long sessionId, ServerConnectionImpl serverConnection, Pdu packet)  
 	{
 		//Round-robin
 		
-		i.compareAndSet(remoteServers.length, 0);
+ 		i.compareAndSet(remoteServers.length, 0);
 		serverSessions.put(sessionId,serverConnection);
 		SmppSessionConfiguration sessionConfig = serverConnection.getConfig();
 		sessionConfig.setHost(remoteServers[i.get()].getIP());
 		sessionConfig.setPort(remoteServers[i.getAndIncrement()].getPort());
-		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this));
+		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this, monitorExecutor, timeoutResponse));
 		handlerService.execute(new BinderRunnable(clientSessions.get(sessionId)));
+		
 		
 	}
 		
@@ -61,6 +67,7 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	public void unbindRequested(Long sessionID, Pdu packet) 
 	{
 		clientSessions.get(sessionID).sendUnbindRequest(packet);
+		
 	}
 
 
@@ -91,12 +98,26 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	public void smppEntityRequested(Long sessionID, Pdu packet) 
 	{
 		clientSessions.get(sessionID).sendSmppRequest(packet);
+
 	}
 
 	@Override
 	public void smppEntityResponse(Long sessionID, Pdu packet) 
 	{
 		serverSessions.get(sessionID).sendResponse(packet);
+
+	}
+	
+	@Override
+	public void smppEntityRequestFromServer(Long sessionId, Pdu packet) {
+		
+		serverSessions.get(sessionId).sendRequest(packet);
+	}
+	
+	@Override
+	public void smppEntityResponseFromClient(Long sessionId, Pdu packet) {
+		clientSessions.get(sessionId).sendSmppResponse(packet);
+		
 	}
 	
 	public class BinderRunnable implements Runnable 
@@ -146,6 +167,5 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		}
 		
 	}
-	
 
 }
