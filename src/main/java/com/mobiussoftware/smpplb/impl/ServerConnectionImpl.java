@@ -132,6 +132,9 @@ public class ServerConnectionImpl implements ServerConnection {
 				
 				correctPacket = true;
 				
+				if(inactivityTimer!=null)
+					inactivityTimer.cancel(true);
+				
 				restartEnquireTimer();
 				
 ///////////////////is it correct//////////////////////////////////////////////////
@@ -203,6 +206,7 @@ public class ServerConnectionImpl implements ServerConnection {
 		}
 		channel.write(buffer);
 		
+		if(packet.getCommandStatus()==SmppConstants.STATUS_OK)
 		serverState = ServerState.BOUND;
 		
 	}
@@ -275,7 +279,6 @@ public class ServerConnectionImpl implements ServerConnection {
 		
 		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
-		
 	}
 	
 	@Override

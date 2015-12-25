@@ -2,11 +2,13 @@ package com.mobiussoftware.smpplb.impl;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.SSLEngine;
+
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
@@ -45,12 +47,20 @@ public class ClientConnectionImpl implements ClientConnection
 	private ClientBootstrap clientBootstrap;
     private ClientConnectionHandlerImpl clientConnectionHandler;
     private SmppSessionConfiguration config;
-    private final PduTranscoder transcoder;
+    public SmppSessionConfiguration getConfig() {
+		return config;
+	}
+
+	private final PduTranscoder transcoder;
     private AtomicInteger sequenceNumberGenerator = new AtomicInteger(1);
     private ClientState clientState=ClientState.INITIAL;
 	private LbClientListener lbClientListener;
     private Long sessionId;
-    private Map<Integer, TimerData> paketMap =  new ConcurrentHashMap <Integer, TimerData>();
+    public Long getSessionId() {
+		return sessionId;
+	}
+
+	private Map<Integer, TimerData> paketMap =  new ConcurrentHashMap <Integer, TimerData>();
     
     private ScheduledExecutorService monitorExecutor;
  
@@ -58,14 +68,14 @@ public class ClientConnectionImpl implements ClientConnection
 
     public enum ClientState 
     {    	
-    	INITIAL, OPEN, BINDING, BOUND, UNBINDING, CLOSED    	
+    	INITIAL, OPEN, BINDING, BOUND, REBINDING, UNBINDING, CLOSED    	
     }
     
     
-	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, long timeoutResponse) 
+	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, Properties properties) 
 	{
-		this.timeoutResponse = timeoutResponse;
-		this.monitorExecutor = monitorExecutor;
+		  this.timeoutResponse = Long.parseLong(properties.getProperty("timeoutResponse"));
+		  this.monitorExecutor = monitorExecutor;
 		  this.sessionId = sessionId;
 		  this.config = config;
 		  this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
@@ -109,8 +119,9 @@ public class ClientConnectionImpl implements ClientConnection
         }
         catch(Exception ex)
         {
-        	logger.error("Connection failed!", ex);
+      	
         	return false;
+        	
         }   
 		
 		clientState=ClientState.OPEN;
@@ -238,6 +249,15 @@ public class ClientConnectionImpl implements ClientConnection
 				logger.error("Received invalid packet in bound state, packet type: " + packet.getCommandId());
 				//как тут обрабатывать и надо ли
 			}
+			break;
+			
+		case REBINDING:
+			
+			
+			
+			
+			
+			
 			break;
 			
 		case UNBINDING:
