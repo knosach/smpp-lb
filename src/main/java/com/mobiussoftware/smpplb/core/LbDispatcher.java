@@ -6,17 +6,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
-import com.cloudhopper.smpp.pdu.BaseBind;
-import com.cloudhopper.smpp.pdu.BaseBindResp;
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.cloudhopper.smpp.tlv.Tlv;
 import com.mobiussoftware.smpplb.api.LbClientListener;
 import com.mobiussoftware.smpplb.api.LbServerListener;
+import com.mobiussoftware.smpplb.impl.BinderRunnable;
 import com.mobiussoftware.smpplb.impl.ClientConnectionImpl;
+import com.mobiussoftware.smpplb.impl.RemoteServer;
 import com.mobiussoftware.smpplb.impl.ServerConnectionImpl;
 
 public class LbDispatcher implements LbClientListener, LbServerListener {
@@ -25,14 +24,18 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	private Map<Long, ServerConnectionImpl> serverSessions = new ConcurrentHashMap<Long, ServerConnectionImpl>();
 	private Map<Long, ClientConnectionImpl> clientSessions = new ConcurrentHashMap<Long, ClientConnectionImpl>();
 	
+	private ScheduledExecutorService reconnectExecutor = Executors.newScheduledThreadPool(2);
+	
 	private RemoteServer [] remoteServers;
 	private AtomicInteger i = new AtomicInteger(0);
 	private Properties properties;
 	private ScheduledExecutorService monitorExecutor; 
 	private ExecutorService handlerService = Executors.newCachedThreadPool();
+	private long reconnectPeriod;
 	
 	public LbDispatcher(Properties properties, ScheduledExecutorService monitorExecutor)
 	{
+		this.reconnectPeriod = Long.parseLong(properties.getProperty("reconnectPeriod"));
 		this.properties = properties;
 		this.monitorExecutor = monitorExecutor;
 		String [] s = properties.getProperty("remoteServers").split(",");
@@ -57,10 +60,9 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		SmppSessionConfiguration sessionConfig = serverConnection.getConfig();
 		sessionConfig.setHost(remoteServers[serverIndex].getIP());
 		sessionConfig.setPort(remoteServers[serverIndex].getPort());
-		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this, monitorExecutor, properties));
-		handlerService.execute(new BinderRunnable(packet, clientSessions.get(sessionId)));
-		
-		
+		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this, monitorExecutor, properties, serverIndex));
+		handlerService.execute(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers));
+
 	}
 		
 	@Override
@@ -119,86 +121,19 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		clientSessions.get(sessionId).sendSmppResponse(packet);
 		
 	}
-	
-	private class BinderRunnable implements Runnable 
-	{
+
+	@Override
+	public void connectionLost(Long sessionId, Pdu packet) {
+		// TODO Auto-generated method stub
+		serverSessions.get(sessionId).reconnectState(true);
+		reconnectExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, 0, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
 		
-		Pdu packet;
-		ClientConnectionImpl client;
-		
-		public BinderRunnable(Pdu packet, ClientConnectionImpl client) 
-		{
-			
-			this.packet = packet;
-			this.client = client;
-		}
-
-		@SuppressWarnings("rawtypes")
-		@Override
-		public void run() 
-		{
-
-			boolean connectSuccesful = true;
-				while(!client.connect())
-				{
-
-					int serverIndex = i.getAndIncrement();
-					if(serverIndex == remoteServers.length)
-					{
-						connectSuccesful = false;
-						break;
-					}
-					client.getConfig().setHost(remoteServers[serverIndex].getIP());
-					client.getConfig().setPort(remoteServers[serverIndex].getPort());
-
-				}
-				
-				if(connectSuccesful){
-				
-		        	client.bind();
-				}else{
-					BaseBindResp bindResponse = (BaseBindResp) ((BaseBind) packet).createResponse();
-					
-					bindResponse.setCommandStatus(SmppConstants.STATUS_SYSERR);
-					bindResponse.setSystemId(client.getConfig().getSystemId());
-					// if the server supports an SMPP server version >= 3.4 AND the bind request
-			        // included an interface version >= 3.4, include an optional parameter with configured sc_interface_version TLV
-					if (client.getConfig().getInterfaceVersion() >= SmppConstants.VERSION_3_4 && ((BaseBind) packet).getInterfaceVersion() >= SmppConstants.VERSION_3_4) 
-					{
-			            Tlv scInterfaceVersion = new Tlv(SmppConstants.TAG_SC_INTERFACE_VERSION, new byte[] { client.getConfig().getInterfaceVersion() });
-			            bindResponse.addOptionalParameter(scInterfaceVersion);
-			        }
-
-					serverSessions.get(client.getSessionId()).sendBindResponse(bindResponse);
-					clientSessions.remove(client.getSessionId());
-					serverSessions.remove(client.getSessionId());
-				}
-
-		}
 	}
-	
-	 private class RemoteServer{
-		private String ip;
-		private int port;
-		
-		RemoteServer(String ip,int port){
-			this.ip = ip;
-			this.port = port;
-		}
 
-		public String getIP() {
-			return ip;
-		}
-
-		public int getPort() {
-			return port;
-		}
-		public String toString()
-		{
-			return ip + "  " + port;
-			
-		}
-		
+	@Override
+	public void reconnectSuccesful(Long sessionId, Pdu packet) {
+		// TODO Auto-generated method stub
+		serverSessions.get(sessionId).reconnectState(false);
 	}
 
 }

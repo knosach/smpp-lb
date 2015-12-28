@@ -69,7 +69,7 @@ public class ServerConnectionImpl implements ServerConnection {
 
 	public enum ServerState 
     {    	
-    	OPEN, BINDING, BOUND, UNBINDING, CLOSED    	
+    	OPEN, BINDING, BOUND, REBINDING, UNBINDING, CLOSED    	
     }
 	
 	@SuppressWarnings("rawtypes")
@@ -122,9 +122,11 @@ public class ServerConnectionImpl implements ServerConnection {
 
 			}
 			break;
+			
 		case BINDING:
 			logger.error("Server received packet in incorrect state (BINDING)");
 			break;
+			
 		case BOUND:
 			correctPacket = false;
 			switch (packet.getCommandId()) {
@@ -183,6 +185,13 @@ public class ServerConnectionImpl implements ServerConnection {
 			}
 
 			break;
+			
+		case REBINDING:
+			
+			sendGenericNack(packet);
+			
+			break;
+			
 		case UNBINDING:
 			logger.error("Server received packet in incorrect state (UNBINDING)");
 			break;
@@ -250,7 +259,14 @@ public class ServerConnectionImpl implements ServerConnection {
 		restartEnquireTimer();
 		GenericNack genericNack = new GenericNack();
 		genericNack.setSequenceNumber(packet.getSequenceNumber());
-		genericNack.setCommandStatus(SmppConstants.STATUS_INVCMDID);
+		if(serverState == ServerState.REBINDING)
+		{
+			genericNack.setCommandStatus(SmppConstants.STATUS_SYSERR);
+		}
+		else
+		{
+		    genericNack.setCommandStatus(SmppConstants.STATUS_INVCMDID);
+		}
 		ChannelBuffer buffer = null;
 		try {
 			buffer = transcoder.encode(genericNack);
@@ -279,6 +295,14 @@ public class ServerConnectionImpl implements ServerConnection {
 		
 		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
+	}
+	
+	public void reconnectState(boolean isReconnect) {
+		if (isReconnect)
+			serverState = ServerState.REBINDING;
+		else
+			serverState = ServerState.BOUND;
+
 	}
 	
 	@Override

@@ -39,9 +39,11 @@ import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.mobiussoftware.smpplb.api.ClientConnection;
 import com.mobiussoftware.smpplb.api.LbClientListener;
 
+
 public class ClientConnectionImpl implements ClientConnection
 {
 	private static final Logger logger = LoggerFactory.getLogger(ClientConnectionImpl.class);
+	
 	
     private Channel channel;
 	private ClientBootstrap clientBootstrap;
@@ -50,10 +52,15 @@ public class ClientConnectionImpl implements ClientConnection
     public SmppSessionConfiguration getConfig() {
 		return config;
 	}
+    private Pdu lastPdu;
 
 	private final PduTranscoder transcoder;
     private AtomicInteger sequenceNumberGenerator = new AtomicInteger(1);
     private ClientState clientState=ClientState.INITIAL;
+	public ClientState getClientState() {
+		return clientState;
+	}
+
 	private LbClientListener lbClientListener;
     private Long sessionId;
     public Long getSessionId() {
@@ -65,6 +72,8 @@ public class ClientConnectionImpl implements ClientConnection
     private ScheduledExecutorService monitorExecutor;
  
     private long timeoutResponse;
+  
+    int serverIndex;
 
     public enum ClientState 
     {    	
@@ -72,8 +81,11 @@ public class ClientConnectionImpl implements ClientConnection
     }
     
     
-	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, Properties properties) 
+	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, 
+			Properties properties, int serverIndex) 
 	{
+
+		  this.serverIndex = serverIndex;
 		  this.timeoutResponse = Long.parseLong(properties.getProperty("timeoutResponse"));
 		  this.monitorExecutor = monitorExecutor;
 		  this.sessionId = sessionId;
@@ -108,25 +120,21 @@ public class ClientConnectionImpl implements ClientConnection
 	}
 	
 	@Override
-	public Boolean connect() 
-	{
-		
+	public Boolean connect() {
 		ChannelFuture channelFuture = null;
 		try 
-        {
+		{
 			channelFuture = clientBootstrap.connect(new InetSocketAddress(config.getHost(), config.getPort())).sync();
-            channel = channelFuture.getChannel();
-        }
-        catch(Exception ex)
-        {
-      	
-        	return false;
-        	
-        }   
-		
-		clientState=ClientState.OPEN;
-		
-		return true;		
+			channel = channelFuture.getChannel();
+		} catch (Exception ex) 
+		{
+			return false;
+		}
+
+		if(clientState!=ClientState.REBINDING)
+		clientState = ClientState.OPEN;
+
+		return true;
 	}
 		
 	@SuppressWarnings("rawtypes")
@@ -160,6 +168,7 @@ public class ClientConnectionImpl implements ClientConnection
 			}
 			paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		    channel.write(buffer);
+		    if(clientState!=ClientState.REBINDING)
 		    clientState=ClientState.BINDING;			
    
 	}
@@ -253,11 +262,18 @@ public class ClientConnectionImpl implements ClientConnection
 			
 		case REBINDING:
 			
-			
-			
-			
-			
-			
+            switch (packet.getCommandId()) 
+            {
+			case SmppConstants.CMD_ID_BIND_RECEIVER_RESP:
+			case SmppConstants.CMD_ID_BIND_TRANSCEIVER_RESP:
+			case SmppConstants.CMD_ID_BIND_TRANSMITTER_RESP:
+				//notificate that connection is ok
+				System.out.println("Connection reconnected");
+				this.lbClientListener.reconnectSuccesful(sessionId, packet);
+				clientState = ClientState.BOUND;
+				
+            }
+
 			break;
 			
 		case UNBINDING:
@@ -329,6 +345,15 @@ public class ClientConnectionImpl implements ClientConnection
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
+	}
+	
+	@Override
+	public void rebind(Pdu packet) {
+		clientState = ClientState.REBINDING;
+		lastPdu = packet;
+		this.lbClientListener.connectionLost(sessionId, packet);
+		//reconnectExecutor.schedule(new BinderRunnable(packet, this, serverIndex, remoteServers), 10000, TimeUnit.MILLISECONDS);
+
 	}
 
 	@Override
