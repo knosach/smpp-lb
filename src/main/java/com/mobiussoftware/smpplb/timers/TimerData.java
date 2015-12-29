@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package com.mobiussoftware.smpplb.timers;
 
 import java.util.concurrent.ScheduledFuture;
 

@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package com.mobiussoftware.smpplb.core;
 
 import java.net.InetSocketAddress;
 import java.util.Properties;
@@ -19,10 +19,11 @@ import org.slf4j.LoggerFactory;
 import com.cloudhopper.smpp.SmppServerConfiguration;
 import com.cloudhopper.smpp.channel.SmppChannelConstants;
 import com.cloudhopper.smpp.impl.DefaultSmppServerCounters;
+import com.mobiussoftware.smpplb.impl.ServerChannelConnector;
 
-public class SmppServer{
+public class LbServer{
 
-	private static final Logger logger = LoggerFactory.getLogger(SmppServer.class);
+	private static final Logger logger = LoggerFactory.getLogger(LbServer.class);
 
     private final ChannelGroup channels;
     private final ServerChannelConnector serverConnector;
@@ -33,7 +34,7 @@ public class SmppServer{
     private final AtomicLong sessionIdSequence;
     private DefaultSmppServerCounters counters;
     
-	public SmppServer (final SmppServerConfiguration configuration,ExecutorService executor, Properties properties) {
+	public LbServer (final SmppServerConfiguration configuration,ExecutorService executor, Properties properties) {
         this.configuration = configuration;
         this.channels = new DefaultChannelGroup();
         this.bossThreadPool = Executors.newCachedThreadPool();
@@ -74,7 +75,7 @@ public class SmppServer{
 	{
 		return counters;
 	}
-    protected Long nextSessionId() 
+    public Long nextSessionId() 
     {
     	this.sessionIdSequence.compareAndSet(Long.MAX_VALUE, 0);
         return this.sessionIdSequence.getAndIncrement();

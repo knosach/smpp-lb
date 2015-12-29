@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package com.mobiussoftware.smpplb.timers;
 
 import com.mobiussoftware.smpplb.api.ServerConnection;
 

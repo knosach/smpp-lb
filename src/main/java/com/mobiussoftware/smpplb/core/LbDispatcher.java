@@ -49,6 +49,7 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		}
 	}
 
+	
 	@Override
 	public void bindRequested(Long sessionId, ServerConnectionImpl serverConnection, Pdu packet)  
 	{
@@ -60,7 +61,7 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		SmppSessionConfiguration sessionConfig = serverConnection.getConfig();
 		sessionConfig.setHost(remoteServers[serverIndex].getIP());
 		sessionConfig.setPort(remoteServers[serverIndex].getPort());
-		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this, monitorExecutor, properties, serverIndex));
+		clientSessions.put(sessionId, new ClientConnectionImpl(sessionId, sessionConfig, this, monitorExecutor, properties, packet, serverIndex));
 		handlerService.execute(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers));
 
 	}
@@ -123,17 +124,25 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	}
 
 	@Override
-	public void connectionLost(Long sessionId, Pdu packet) {
-		// TODO Auto-generated method stub
+	public void connectionLost(Long sessionId, Pdu packet, int serverIndex) {
+		
 		serverSessions.get(sessionId).reconnectState(true);
-		reconnectExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, 0, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
+		reconnectExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
 		
 	}
 
 	@Override
-	public void reconnectSuccesful(Long sessionId, Pdu packet) {
-		// TODO Auto-generated method stub
+	public void reconnectSuccesful(Long sessionId) {
+		
 		serverSessions.get(sessionId).reconnectState(false);
+	}
+
+
+	@Override
+	public void checkConnection(Long sessionId) {
+		serverSessions.get(sessionId).generateEnquireLink();
+		clientSessions.get(sessionId).generateEnquireLink();
+		
 	}
 
 }

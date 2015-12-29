@@ -16,6 +16,7 @@ import com.cloudhopper.smpp.SmppBindType;
 import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.pdu.BaseBind;
+import com.cloudhopper.smpp.pdu.EnquireLink;
 import com.cloudhopper.smpp.pdu.GenericNack;
 import com.cloudhopper.smpp.pdu.Pdu;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
@@ -25,6 +26,11 @@ import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.mobiussoftware.smpplb.api.LbServerListener;
 import com.mobiussoftware.smpplb.api.ServerConnection;
+import com.mobiussoftware.smpplb.timers.ServerTimer;
+import com.mobiussoftware.smpplb.timers.ServerTimerConnection;
+import com.mobiussoftware.smpplb.timers.ServerTimerEnquire;
+import com.mobiussoftware.smpplb.timers.ServerTimerInactivity;
+import com.mobiussoftware.smpplb.timers.TimerData;
 
 public class ServerConnectionImpl implements ServerConnection {
 	
@@ -213,8 +219,12 @@ public class ServerConnectionImpl implements ServerConnection {
 		} catch (UnrecoverablePduException | RecoverablePduException e) {
 			logger.error("Encode error: ", e);
 		}
-		channel.write(buffer);
 		
+			
+				channel.write(buffer);
+		
+			
+
 		if(packet.getCommandStatus()==SmppConstants.STATUS_OK)
 		serverState = ServerState.BOUND;
 		
@@ -314,9 +324,9 @@ public class ServerConnectionImpl implements ServerConnection {
         case SmppConstants.CMD_ID_ENQUIRE_LINK:
         
         	if(!paketMap.containsKey(packet.getSequenceNumber()))
-        		logger.info("We take SMPP response from client in time");
+        		logger.info("(requestTimeout)We take SMPP response from client in time");
     		else
-    			logger.info("We did NOT take SMPP response from client in time");
+    			logger.info("(requestTimeout)We did NOT take SMPP response from client in time");
 			break;
 		}
 	}
@@ -325,9 +335,9 @@ public class ServerConnectionImpl implements ServerConnection {
 	public void connectionTimeout(Long sessionId) {
 		
 		if(connectionTimer.isCancelled())
-    		logger.info("Session initialization succesful for sessionId: " + sessionId);
+    		logger.info("(connectionTimeout)Session initialization succesful for sessionId: " + sessionId);
 		else
-			logger.info("Session initialization failed for sessionId: " + sessionId);
+			logger.info("(connectionTimeout)Session initialization failed for sessionId: " + sessionId);
 		
 		
 	}
@@ -336,9 +346,9 @@ public class ServerConnectionImpl implements ServerConnection {
 	public void inactivityTimeout(Long sessionId) {
 		
 		if(inactivityTimer.isCancelled())
-    		logger.info("Session in good shape for sessionId: " + sessionId);
+    		logger.info("(inactivityTimeout)Session in good shape for sessionId: " + sessionId);
 		else
-			logger.info("Session in bad shape for sessionId: " + sessionId + ". The resulting behaviour is to either close the session or issue an unbind request.");
+			logger.info("(inactivityTimeout)Session in bad shape for sessionId: " + sessionId + ". The resulting behaviour is to either close the session or issue an unbind request.");
 		
 	}
 
@@ -346,9 +356,13 @@ public class ServerConnectionImpl implements ServerConnection {
 	public void enquireTimeout(Long sessionId) {
 		if(enquireTimer.isCancelled())
 			
-    		logger.info("Time between operations is ok for sessionId : " + sessionId);
+    		logger.info("(enquireTimeout)Time between operations is ok for sessionId : " + sessionId);
 		else
-			logger.info("We should check connection for sessionId: " + sessionId + ". We must generate enquire_link.");
+			logger.info("(enquireTimeout)We should check connection for sessionId: " + sessionId + ". We must generate enquire_link.");
+		
+		lbServerListener.checkConnection(sessionId);
+		
+		
 		
 	}
 	
@@ -356,6 +370,20 @@ public class ServerConnectionImpl implements ServerConnection {
 	{
 		enquireTimer.cancel(true);
 		enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);
+	}
+
+	public void generateEnquireLink() {
+		
+		
+//		ChannelBuffer buffer = null;
+//		try {
+//			buffer = transcoder.encode(new EnquireLink());
+//			
+//		} catch (UnrecoverablePduException | RecoverablePduException e) {
+//			logger.error("Encode error: ", e);
+//		}
+//		channel.write(buffer);
+		
 	}
 
 }

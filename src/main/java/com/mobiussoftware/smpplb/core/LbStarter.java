@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.cloudhopper.smpp.SmppServerConfiguration;
-import com.mobiussoftware.smpplb.impl.SmppServer;
 
 public class LbStarter {
 
@@ -112,7 +111,7 @@ public class LbStarter {
         configuration.setMaxConnectionSize(Integer.parseInt(properties.getProperty("maxConnectionSize")));
         configuration.setNonBlockingSocketsEnabled(Boolean.parseBoolean(properties.getProperty("nonBlockingSocketsEnabled")));
         configuration.setDefaultSessionCountersEnabled(Boolean.parseBoolean(properties.getProperty("defaultSessionCountersEnabled")));
-		SmppServer smppLbServer = new SmppServer(configuration, executor, properties);
+		LbServer smppLbServer = new LbServer(configuration, executor, properties);
         smppLbServer.start();
 
 	}

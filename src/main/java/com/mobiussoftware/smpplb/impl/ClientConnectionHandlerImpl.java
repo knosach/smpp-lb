@@ -10,17 +10,16 @@ import org.slf4j.LoggerFactory;
 
 import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.mobiussoftware.smpplb.api.ClientConnection;
 import com.mobiussoftware.smpplb.impl.ClientConnectionImpl.ClientState;
 
 public class ClientConnectionHandlerImpl extends SimpleChannelHandler  
 {	
 	
 	private static final Logger logger = LoggerFactory.getLogger(ClientConnectionHandlerImpl.class);
-	private ClientConnection listener;
+	private ClientConnectionImpl listener;
 	private boolean correctDisconnect = false;
-	private Pdu packet;
-	public ClientConnectionHandlerImpl(ClientConnection listener)
+	
+	public ClientConnectionHandlerImpl(ClientConnectionImpl listener)
 	{
 		this.listener=listener;
 	}
@@ -32,7 +31,7 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 		{
 			
 	            Pdu pdu = (Pdu)e.getMessage();
-	            this.packet = pdu;
+	            
 	            if((pdu.getCommandId() == SmppConstants.CMD_ID_UNBIND_RESP)&&listener.getClientState() == ClientState.UNBINDING)
 	            	correctDisconnect = true;
 	            
@@ -50,11 +49,11 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 	public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e)
 	{
 
-		//if bad disconnect reconnect
+		//if disconnect was not correct try to reconnect
 		if(!correctDisconnect)
 		{
 			
-			this.listener.rebind(packet);
+			this.listener.rebind();
 			
 		}
 		

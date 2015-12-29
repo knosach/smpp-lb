@@ -21,16 +21,17 @@ import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.mobiussoftware.smpplb.api.LbServerListener;
 import com.mobiussoftware.smpplb.core.LbDispatcher;
+import com.mobiussoftware.smpplb.core.LbServer;
 
 public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
 
     private ChannelGroup channels;
-    private SmppServer server;
+    private LbServer server;
     private LbServerListener lbServerListener;
     private Properties properties;
     private ScheduledExecutorService monitorExecutor  = Executors.newScheduledThreadPool(16);
 
-    public ServerChannelConnector(ChannelGroup channels, SmppServer smppServer, Properties properties) 
+    public ServerChannelConnector(ChannelGroup channels, LbServer smppServer, Properties properties) 
     {
         this.channels = channels;
         this.server = smppServer;
