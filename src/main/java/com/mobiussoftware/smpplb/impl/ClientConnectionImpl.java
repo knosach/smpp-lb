@@ -245,17 +245,19 @@ public class ClientConnectionImpl implements ClientConnection
 				break;
 				
 			case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
+				correctPacket = true;
 				if(!isEnquireLinkSent)
 				{
 					if(paketMap.containsKey(packet.getSequenceNumber()))
 						paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
-					correctPacket = true;
+					
 					this.lbClientListener.smppEntityResponse(sessionId, packet);
 				}else
 				{
 					isEnquireLinkSent = false;
-					//notify that connection ok
-					//restart timer
+					this.lbClientListener.enquireLinkReceivedFromServer(sessionId);
+					//notify that connection OK
+					//restart timer in serverimpl
 				}
 				break;
 			case SmppConstants.CMD_ID_DATA_SM:
@@ -269,7 +271,7 @@ public class ClientConnectionImpl implements ClientConnection
 			}
 			if (!correctPacket){
 				logger.error("Received invalid packet in bound state, packet type: " + packet.getCommandId());
-				//как тут обрабатывать и надо ли
+			
 			}
 			break;
 			
@@ -303,7 +305,7 @@ public class ClientConnectionImpl implements ClientConnection
 				this.lbClientListener.unbindSuccesfull(sessionId, packet);
 				if(paketMap.containsKey(packet.getSequenceNumber()))
 					paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);	
-///////////////////is it correct//////////////////////////////////////////////////
+
 				paketMap.clear();
 				channel.close();
 				clientState = ClientState.CLOSED;

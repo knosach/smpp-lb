@@ -11,5 +11,6 @@ public interface LbClientListener {
 	void smppEntityRequestFromServer(Long sessionId, Pdu packet);
 	void connectionLost(Long sessionId, Pdu packet, int serverIndex);
 	void reconnectSuccesful(Long sessionId);
+	void enquireLinkReceivedFromServer(Long sessionId);
 
 }

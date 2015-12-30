@@ -209,7 +209,7 @@ public class ServerConnectionImpl implements ServerConnection {
 	}
 	@Override
 	public void sendBindResponse(Pdu packet){
-		
+		inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
 		restartEnquireTimer();
 		
         ChannelBuffer buffer = null;
@@ -349,7 +349,7 @@ public class ServerConnectionImpl implements ServerConnection {
     		logger.info("(inactivityTimeout)Session in good shape for sessionId: " + sessionId);
 		else
 			logger.info("(inactivityTimeout)Session in bad shape for sessionId: " + sessionId + ". The resulting behaviour is to either close the session or issue an unbind request.");
-		
+			//close session		
 	}
 
 	@Override
@@ -361,13 +361,19 @@ public class ServerConnectionImpl implements ServerConnection {
 			logger.info("(enquireTimeout)We should check connection for sessionId: " + sessionId + ". We must generate enquire_link.");
 		
 		lbServerListener.checkConnection(sessionId);
+		//restart inactivityTimeout
+		
+		if(inactivityTimer!=null)
+			inactivityTimer.cancel(true);
+		inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
 		
 		
 		
 	}
 	
-	private void restartEnquireTimer()
+	public void restartEnquireTimer()
 	{
+		//////////////////////////////
 		enquireTimer.cancel(true);
 		enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);
 	}
