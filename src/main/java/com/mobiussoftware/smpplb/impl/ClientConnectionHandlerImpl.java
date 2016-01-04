@@ -16,12 +16,12 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 {	
 	
 	private static final Logger logger = LoggerFactory.getLogger(ClientConnectionHandlerImpl.class);
-	private ClientConnectionImpl listener;
+	private ClientConnectionImpl listener = null;
 	private boolean correctDisconnect = false;
 	
 	public ClientConnectionHandlerImpl(ClientConnectionImpl listener)
 	{
-		this.listener=listener;
+		this.listener = listener;
 	}
 	
 	@Override
@@ -35,7 +35,7 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 	            if((pdu.getCommandId() == SmppConstants.CMD_ID_UNBIND_RESP)&&listener.getClientState() == ClientState.UNBINDING)
 	            	correctDisconnect = true;
 	            
-	            this.listener.packetReceived(pdu);
+	            listener.packetReceived(pdu);
 	    }
      }
 	
@@ -49,20 +49,21 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 	public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e)
 	{
 
+		
 		//if disconnect was not correct try to reconnect
-		if(!correctDisconnect)
+		if(!correctDisconnect&&!listener.isEnquireLinkSent())
 		{
 			
-			this.listener.rebind();
-			
+			listener.rebind();
+
 		}
-		
-		
-		
+
 	}
 
-	
-
-	
+	@Override
+	public void channelClosed(ChannelHandlerContext ctx, ChannelStateEvent e){
+		
+		System.out.println("Client channel closed");
+	}
 
 }

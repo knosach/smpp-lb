@@ -26,7 +26,8 @@ import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.mobiussoftware.smpplb.api.LbServerListener;
 import com.mobiussoftware.smpplb.api.ServerConnection;
-import com.mobiussoftware.smpplb.timers.ServerTimer;
+import com.mobiussoftware.smpplb.timers.ServerTimerConnectionCheck;
+import com.mobiussoftware.smpplb.timers.ServerTimerResponse;
 import com.mobiussoftware.smpplb.timers.ServerTimerConnection;
 import com.mobiussoftware.smpplb.timers.ServerTimerEnquire;
 import com.mobiussoftware.smpplb.timers.ServerTimerInactivity;
@@ -46,12 +47,18 @@ public class ServerConnectionImpl implements ServerConnection {
 	private ScheduledFuture<?> connectionTimer;
 	private ScheduledFuture<?> inactivityTimer;
 	private ScheduledFuture<?> enquireTimer;
+	private ScheduledFuture<?> connectionCheckTimer;
 	
 	private long timeoutResponse;
 	private long timeoutConnection;
 	private long timeoutInactivity;
 	private long timeoutEnquire;
+	private long timeoutConnectionCheck;
 	private ScheduledExecutorService monitorExecutor;
+	private boolean isEnquireLinkSent;
+	
+	private boolean isClientSideOk;
+	private boolean isServerSideOk;
 
     
     public ServerConnectionImpl(Long sessionId, Channel channel, LbServerListener lbServerListener, Properties properties, ScheduledExecutorService monitorExecutor)
@@ -64,6 +71,7 @@ public class ServerConnectionImpl implements ServerConnection {
     	this.timeoutConnection = Long.parseLong(properties.getProperty("timeoutConnection"));
     	this.timeoutInactivity = Long.parseLong(properties.getProperty("timeoutInactivity"));
     	this.timeoutEnquire = Long.parseLong(properties.getProperty("timeoutEnquire"));
+    	this.timeoutConnectionCheck = Long.parseLong(properties.getProperty("timeoutConnectionCheck"));
     	this.monitorExecutor = monitorExecutor;
     	this.connectionTimer =  monitorExecutor.schedule(new ServerTimerConnection(this, sessionId),timeoutConnection,TimeUnit.MILLISECONDS);
     }
@@ -144,10 +152,7 @@ public class ServerConnectionImpl implements ServerConnection {
 					inactivityTimer.cancel(true);
 				
 				restartEnquireTimer();
-				
-///////////////////is it correct//////////////////////////////////////////////////
-				paketMap.clear();
-				
+
 				lbServerListener.unbindRequested(sessionId, packet);
 				serverState = ServerState.UNBINDING;
 				break;
@@ -170,7 +175,7 @@ public class ServerConnectionImpl implements ServerConnection {
 				
 			case SmppConstants.CMD_ID_DATA_SM_RESP:
 			case SmppConstants.CMD_ID_DELIVER_SM_RESP:
-			case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
+			//case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
 				correctPacket = true;
 				
 				restartEnquireTimer();
@@ -182,7 +187,25 @@ public class ServerConnectionImpl implements ServerConnection {
 				
 				lbServerListener.smppEntityResponseFromClient(sessionId, packet);
 				break;
-
+				
+			case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
+				correctPacket = true;
+				if(!isEnquireLinkSent)
+				{
+					restartEnquireTimer();
+					
+					inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
+					
+					if(paketMap.containsKey(packet.getSequenceNumber()))
+						paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
+					
+					lbServerListener.smppEntityResponseFromClient(sessionId, packet);
+					
+				}else
+				{
+					isClientSideOk = true;
+				}
+				break;
 			}
 
 			if (!correctPacket) {
@@ -219,11 +242,7 @@ public class ServerConnectionImpl implements ServerConnection {
 		} catch (UnrecoverablePduException | RecoverablePduException e) {
 			logger.error("Encode error: ", e);
 		}
-		
-			
 				channel.write(buffer);
-		
-			
 
 		if(packet.getCommandStatus()==SmppConstants.STATUS_OK)
 		serverState = ServerState.BOUND;
@@ -244,6 +263,7 @@ public class ServerConnectionImpl implements ServerConnection {
 		}
 		channel.write(buffer);
 		serverState = ServerState.CLOSED;
+		paketMap.clear();
 		
 	}
 	@Override
@@ -303,7 +323,7 @@ public class ServerConnectionImpl implements ServerConnection {
 		if(inactivityTimer!=null)
 			inactivityTimer.cancel(true);
 		
-		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
 	}
 	
@@ -327,7 +347,6 @@ public class ServerConnectionImpl implements ServerConnection {
         		logger.info("(requestTimeout)We take SMPP response from client in time");
     		else
     			logger.info("(requestTimeout)We did NOT take SMPP response from client in time");
-			break;
 		}
 	}
 
@@ -337,9 +356,11 @@ public class ServerConnectionImpl implements ServerConnection {
 		if(connectionTimer.isCancelled())
     		logger.info("(connectionTimeout)Session initialization succesful for sessionId: " + sessionId);
 		else
+		{
 			logger.info("(connectionTimeout)Session initialization failed for sessionId: " + sessionId);
-		
-		
+			logger.info("(connectionTimeout)Channel closed for sessionId: " + sessionId);
+			channel.close();
+		}
 	}
 
 	@Override
@@ -348,8 +369,10 @@ public class ServerConnectionImpl implements ServerConnection {
 		if(inactivityTimer.isCancelled())
     		logger.info("(inactivityTimeout)Session in good shape for sessionId: " + sessionId);
 		else
+		{
 			logger.info("(inactivityTimeout)Session in bad shape for sessionId: " + sessionId + ". The resulting behaviour is to either close the session or issue an unbind request.");
-			//close session		
+			//close session
+		}
 	}
 
 	@Override
@@ -358,22 +381,24 @@ public class ServerConnectionImpl implements ServerConnection {
 			
     		logger.info("(enquireTimeout)Time between operations is ok for sessionId : " + sessionId);
 		else
+		{
 			logger.info("(enquireTimeout)We should check connection for sessionId: " + sessionId + ". We must generate enquire_link.");
 		
 		lbServerListener.checkConnection(sessionId);
-		//restart inactivityTimeout
-		
-		if(inactivityTimer!=null)
-			inactivityTimer.cancel(true);
-		inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
-		
-		
-		
+		isServerSideOk = false;
+		isClientSideOk = false;
+		connectionCheckTimer =  monitorExecutor.schedule(new ServerTimerConnectionCheck(this, sessionId),timeoutConnectionCheck,TimeUnit.MILLISECONDS);
+
+		}
+	
 	}
 	
 	public void restartEnquireTimer()
 	{
-		//////////////////////////////
+		
+		if(connectionCheckTimer!=null){
+			connectionCheckTimer.cancel(true);
+		}
 		enquireTimer.cancel(true);
 		enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);
 	}
@@ -381,14 +406,35 @@ public class ServerConnectionImpl implements ServerConnection {
 	public void generateEnquireLink() {
 		
 		
-//		ChannelBuffer buffer = null;
-//		try {
-//			buffer = transcoder.encode(new EnquireLink());
-//			
-//		} catch (UnrecoverablePduException | RecoverablePduException e) {
-//			logger.error("Encode error: ", e);
-//		}
-//		channel.write(buffer);
+		ChannelBuffer buffer = null;
+		try {
+			buffer = transcoder.encode(new EnquireLink());
+			
+		} catch (UnrecoverablePduException | RecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}
+		channel.write(buffer);
+		isEnquireLinkSent = true;
+	}
+
+	@Override
+	public void connectionCheck(Long sessionId) {
+		
+		if(isServerSideOk&&isClientSideOk)
+		{
+			restartEnquireTimer();
+			logger.info("Enquire timer restarted.");
+		}else
+		{
+		logger.info("Close connection with sessionId " + sessionId + "  because of did not receive enquire response");
+		channel.close();
+		lbServerListener.closeConnection(sessionId);
+		}
+		
+	}
+
+	public void serverSideOk() {
+		isServerSideOk = true;
 		
 	}
 

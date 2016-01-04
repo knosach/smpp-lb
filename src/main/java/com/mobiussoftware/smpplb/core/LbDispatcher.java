@@ -148,7 +148,16 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 
 	@Override
 	public void enquireLinkReceivedFromServer(Long sessionId) {
-		serverSessions.get(sessionId).restartEnquireTimer();
+		serverSessions.get(sessionId).serverSideOk();
+		
+	}
+
+
+	@Override
+	public void closeConnection(Long sessionId) {
+		clientSessions.get(sessionId).closeChannel();
+		clientSessions.remove(sessionId);
+		serverSessions.remove(sessionId);
 		
 	}
 

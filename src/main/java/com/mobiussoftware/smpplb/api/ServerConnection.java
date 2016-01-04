@@ -12,5 +12,6 @@ public interface ServerConnection {
 	public void connectionTimeout(Long sessionId);
 	public void inactivityTimeout(Long sessionId);
 	public void enquireTimeout(Long sessionId);
+	public void connectionCheck(Long sessionId);
 
 }

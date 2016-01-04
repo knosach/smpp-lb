@@ -11,6 +11,7 @@ public interface LbServerListener {
 	void smppEntityRequested(Long sessionId, Pdu packet);
 	void smppEntityResponseFromClient(Long sessionId, Pdu packet);
 	void checkConnection(Long sessionId);
+	void closeConnection(Long sessionId);
 	
 	
 }

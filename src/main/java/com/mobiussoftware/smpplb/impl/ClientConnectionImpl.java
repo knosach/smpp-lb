@@ -5,8 +5,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import javax.net.ssl.SSLEngine;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
@@ -39,7 +37,7 @@ import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.mobiussoftware.smpplb.api.ClientConnection;
 import com.mobiussoftware.smpplb.api.LbClientListener;
-import com.mobiussoftware.smpplb.timers.ClientTimer;
+import com.mobiussoftware.smpplb.timers.ClientTimerResponse;
 import com.mobiussoftware.smpplb.timers.TimerData;
 
 
@@ -53,7 +51,6 @@ public class ClientConnectionImpl implements ClientConnection
     private SmppSessionConfiguration config;
     private Pdu bindPacket;
 	private final PduTranscoder transcoder;
-    private AtomicInteger sequenceNumberGenerator = new AtomicInteger(1);
     private ClientState clientState=ClientState.INITIAL;
 	private LbClientListener lbClientListener;
     private Long sessionId;
@@ -63,7 +60,10 @@ public class ClientConnectionImpl implements ClientConnection
     private int serverIndex;
     private boolean isEnquireLinkSent;
     
-    public SmppSessionConfiguration getConfig() {
+    public boolean isEnquireLinkSent() {
+		return isEnquireLinkSent;
+	}
+	public SmppSessionConfiguration getConfig() {
 		return config;
 	}
     public ClientState getClientState() {
@@ -154,9 +154,9 @@ public class ClientConnectionImpl implements ClientConnection
 	        packet.setSystemType(config.getSystemType());
 	        packet.setInterfaceVersion(config.getInterfaceVersion());
 	        packet.setAddressRange(config.getAddressRange());
-	        // assign the next PDU sequence 
-	        sequenceNumberGenerator.compareAndSet(Integer.MAX_VALUE, 1);
-	        packet.setSequenceNumber(sequenceNumberGenerator.getAndIncrement());
+	        //sequence number of bind packet is 1 always
+
+	        packet.setSequenceNumber(1);
   
 	        ChannelBuffer buffer = null;
 			try {
@@ -165,7 +165,7 @@ public class ClientConnectionImpl implements ClientConnection
 			} catch (UnrecoverablePduException | RecoverablePduException e) {
 				logger.error("Encode error: ", e);
 			}
-			paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+			paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		    channel.write(buffer);
 		    if(clientState!=ClientState.REBINDING)
 		    clientState=ClientState.BINDING;			
@@ -282,10 +282,14 @@ public class ClientConnectionImpl implements ClientConnection
 			case SmppConstants.CMD_ID_BIND_RECEIVER_RESP:
 			case SmppConstants.CMD_ID_BIND_TRANSCEIVER_RESP:
 			case SmppConstants.CMD_ID_BIND_TRANSMITTER_RESP:
+				if (packet.getCommandStatus() == SmppConstants.STATUS_OK){
 				//notificate that connection is ok
-				System.out.println("Connection reconnected");
+				logger.info("Connection reconnected for sessionId : " + sessionId);
 				this.lbClientListener.reconnectSuccesful(sessionId);
 				clientState = ClientState.BOUND;
+				}else{
+					//what to do if status not ok
+				}
 				
             }
 
@@ -301,7 +305,6 @@ public class ClientConnectionImpl implements ClientConnection
 				logger.error("Received invalid packet in unbinding state,packet type:" + packet.getCommandId());
 			else {
 
-				
 				this.lbClientListener.unbindSuccesfull(sessionId, packet);
 				if(paketMap.containsKey(packet.getSequenceNumber()))
 					paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);	
@@ -329,7 +332,7 @@ public class ClientConnectionImpl implements ClientConnection
 			logger.error("Encode error: ", e);
 		}
 		if(packet.getCommandId()!=SmppConstants.CMD_ID_GENERIC_NACK)
-		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
 		clientState = ClientState.UNBINDING;
 		
@@ -347,7 +350,7 @@ public class ClientConnectionImpl implements ClientConnection
 			logger.error("Encode error: ", e);
 		}
 	
-		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimer(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 		channel.write(buffer);
 	}
 	
@@ -420,5 +423,11 @@ public class ClientConnectionImpl implements ClientConnection
 		}
 		channel.write(buffer);
 		isEnquireLinkSent = true;
+	}
+	
+	public void closeChannel() {
+		
+		channel.close();
+		
 	}
 }

@@ -1,6 +1,7 @@
 package com.mobiussoftware.smpplb.impl;
 
 import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelHandler;
 
@@ -28,5 +29,11 @@ public class ServerConnectionHandlerImpl extends SimpleChannelHandler{
 	           
 	    }
      }
+	
+	@Override
+	public void channelClosed(ChannelHandlerContext ctx, ChannelStateEvent e){
+		
+		System.out.println("Server channel closed");
+	}
 
 }
