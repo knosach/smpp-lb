@@ -395,10 +395,6 @@ public class ServerConnectionImpl implements ServerConnection {
 	
 	public void restartEnquireTimer()
 	{
-		
-		if(connectionCheckTimer!=null){
-			connectionCheckTimer.cancel(true);
-		}
 		enquireTimer.cancel(true);
 		enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);
 	}
@@ -420,9 +416,13 @@ public class ServerConnectionImpl implements ServerConnection {
 	@Override
 	public void connectionCheck(Long sessionId) {
 		
-		if(isServerSideOk&&isClientSideOk)
+		if(isServerSideOk&&!isClientSideOk)
 		{
-			restartEnquireTimer();
+			connectionCheckTimer.cancel(true);
+		
+			enquireTimer.cancel(true);
+			enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);
+			
 			logger.info("Enquire timer restarted.");
 		}else
 		{
