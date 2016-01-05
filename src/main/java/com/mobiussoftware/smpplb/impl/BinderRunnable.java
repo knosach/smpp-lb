@@ -74,6 +74,7 @@ public class BinderRunnable implements Runnable
 				serverSessions.get(sessionId).sendBindResponse(bindResponse);
 				}else
 				{
+					///must do not send generic nack!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11unbind 
 					GenericNack genericNack = new GenericNack();
 					genericNack.setSequenceNumber(packet.getSequenceNumber());
 					genericNack.setCommandStatus(SmppConstants.STATUS_SYSERR);

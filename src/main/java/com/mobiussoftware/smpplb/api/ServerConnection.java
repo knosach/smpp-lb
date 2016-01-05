@@ -13,5 +13,6 @@ public interface ServerConnection {
 	public void inactivityTimeout(Long sessionId);
 	public void enquireTimeout(Long sessionId);
 	public void connectionCheck(Long sessionId);
+	public void sendUnbindRequest(Pdu packet);
 
 }

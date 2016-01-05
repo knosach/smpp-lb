@@ -161,4 +161,21 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		
 	}
 
+
+	@Override
+	public void unbindRequestedFromServer(Long sessionId, Pdu packet) {
+		serverSessions.get(sessionId).sendUnbindRequest(packet);
+		
+	}
+
+
+	@Override
+	public void unbindSuccesfullFromServer(Long sessionId, Pdu packet) {
+		
+		clientSessions.get(sessionId).sendUnbindResponse(packet);
+		clientSessions.remove(sessionId);
+		serverSessions.remove(sessionId);
+		
+	}
+
 }

@@ -19,6 +19,8 @@ import com.cloudhopper.smpp.pdu.BaseBind;
 import com.cloudhopper.smpp.pdu.EnquireLink;
 import com.cloudhopper.smpp.pdu.GenericNack;
 import com.cloudhopper.smpp.pdu.Pdu;
+import com.cloudhopper.smpp.pdu.PduRequest;
+import com.cloudhopper.smpp.pdu.PduResponse;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.transcoder.PduTranscoder;
@@ -131,6 +133,8 @@ public class ServerConnectionImpl implements ServerConnection {
 				config.setSystemType(bindRequest.getSystemType());
 				config.setAddressRange(bindRequest.getAddressRange());
 				config.setInterfaceVersion(bindRequest.getInterfaceVersion());
+				//start request timer
+				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 				lbServerListener.bindRequested(sessionId, this, bindRequest);
 				serverState = ServerState.BINDING;
 
@@ -147,6 +151,9 @@ public class ServerConnectionImpl implements ServerConnection {
 			case SmppConstants.CMD_ID_UNBIND:
 				
 				correctPacket = true;
+				
+				//start request timer
+				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 				
 				if(inactivityTimer!=null)
 					inactivityTimer.cancel(true);
@@ -165,6 +172,8 @@ public class ServerConnectionImpl implements ServerConnection {
 			case SmppConstants.CMD_ID_GENERIC_NACK:
 			case SmppConstants.CMD_ID_ENQUIRE_LINK:
 				correctPacket = true;
+				//start request timer
+				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 				
 				restartEnquireTimer();
 				
@@ -175,16 +184,12 @@ public class ServerConnectionImpl implements ServerConnection {
 				
 			case SmppConstants.CMD_ID_DATA_SM_RESP:
 			case SmppConstants.CMD_ID_DELIVER_SM_RESP:
-			//case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
 				correctPacket = true;
 				
 				restartEnquireTimer();
 				
 				inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
-				
-				if(paketMap.containsKey(packet.getSequenceNumber()))
-					paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
-				
+
 				lbServerListener.smppEntityResponseFromClient(sessionId, packet);
 				break;
 				
@@ -195,12 +200,8 @@ public class ServerConnectionImpl implements ServerConnection {
 					restartEnquireTimer();
 					
 					inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
-					
-					if(paketMap.containsKey(packet.getSequenceNumber()))
-						paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
-					
+
 					lbServerListener.smppEntityResponseFromClient(sessionId, packet);
-					
 				}else
 				{
 					isClientSideOk = true;
@@ -217,12 +218,34 @@ public class ServerConnectionImpl implements ServerConnection {
 			
 		case REBINDING:
 			
-			sendGenericNack(packet);
+			restartEnquireTimer();
+			
+			if(inactivityTimer!=null)
+				inactivityTimer.cancel(true);
+			
+			inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
+			
+			PduResponse pduResponse = ((PduRequest<?>) packet).createResponse();
+			pduResponse.setCommandStatus(SmppConstants.STATUS_SYSERR);
+		
+			sendResponse(pduResponse);
 			
 			break;
 			
 		case UNBINDING:
-			logger.error("Server received packet in incorrect state (UNBINDING)");
+			correctPacket = false;
+
+			if (packet.getCommandId() == SmppConstants.CMD_ID_UNBIND_RESP)
+				correctPacket = true;
+
+			if (!correctPacket)
+				logger.error("Received invalid packet in unbinding state,packet type:" + packet.getCommandId());
+			else {
+				this.lbServerListener.unbindSuccesfullFromServer(sessionId, packet);
+				paketMap.clear();
+				channel.close();
+				serverState = ServerState.CLOSED;
+			}
 			break;
 		case CLOSED:
 			logger.error("Server received packet in incorrect state (CLOSED)");
@@ -232,6 +255,10 @@ public class ServerConnectionImpl implements ServerConnection {
 	}
 	@Override
 	public void sendBindResponse(Pdu packet){
+		
+		if(paketMap.containsKey(packet.getSequenceNumber()))
+			paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
+		
 		inactivityTimer =  monitorExecutor.schedule(new ServerTimerInactivity(this, sessionId),timeoutInactivity,TimeUnit.MILLISECONDS);
 		restartEnquireTimer();
 		
@@ -252,6 +279,9 @@ public class ServerConnectionImpl implements ServerConnection {
 	@Override
 	public void sendUnbindResponse(Pdu packet){
 		
+		if(paketMap.containsKey(packet.getSequenceNumber()))
+			paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
+		
 		enquireTimer.cancel(true);
 
         ChannelBuffer buffer = null;
@@ -263,11 +293,15 @@ public class ServerConnectionImpl implements ServerConnection {
 		}
 		channel.write(buffer);
 		serverState = ServerState.CLOSED;
+
 		paketMap.clear();
 		
 	}
 	@Override
 	public void sendResponse(Pdu packet){
+		
+		if(paketMap.containsKey(packet.getSequenceNumber()))
+			paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
 		
 		restartEnquireTimer();
 		
@@ -284,19 +318,29 @@ public class ServerConnectionImpl implements ServerConnection {
 
 	}
 	
+	@Override
+    public void sendUnbindRequest(Pdu packet) {
+		
+		ChannelBuffer buffer = null;
+		try {
+			buffer = transcoder.encode(packet);
+			
+		} catch (UnrecoverablePduException | RecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}
+		
+		channel.write(buffer);
+		serverState = ServerState.UNBINDING;
+		
+	}
+	
 	private void sendGenericNack(Pdu packet){
 		
 		restartEnquireTimer();
 		GenericNack genericNack = new GenericNack();
 		genericNack.setSequenceNumber(packet.getSequenceNumber());
-		if(serverState == ServerState.REBINDING)
-		{
-			genericNack.setCommandStatus(SmppConstants.STATUS_SYSERR);
-		}
-		else
-		{
-		    genericNack.setCommandStatus(SmppConstants.STATUS_INVCMDID);
-		}
+	    genericNack.setCommandStatus(SmppConstants.STATUS_INVCMDID);
+
 		ChannelBuffer buffer = null;
 		try {
 			buffer = transcoder.encode(genericNack);
@@ -322,8 +366,7 @@ public class ServerConnectionImpl implements ServerConnection {
 		
 		if(inactivityTimer!=null)
 			inactivityTimer.cancel(true);
-		
-		paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ServerTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+
 		channel.write(buffer);
 	}
 	
@@ -338,16 +381,21 @@ public class ServerConnectionImpl implements ServerConnection {
 	@Override
 	public void requestTimeout(Pdu packet) 
 	{
-		switch(packet.getCommandId()){
-		case SmppConstants.CMD_ID_CANCEL_SM:
-        case SmppConstants.CMD_ID_DELIVER_SM:
-        case SmppConstants.CMD_ID_ENQUIRE_LINK:
-        
+
         	if(!paketMap.containsKey(packet.getSequenceNumber()))
         		logger.info("(requestTimeout)We take SMPP response from client in time");
     		else
+    		{
     			logger.info("(requestTimeout)We did NOT take SMPP response from client in time");
-		}
+    			
+    		paketMap.remove(packet.getSequenceNumber());
+        	PduResponse pduResponse = ((PduRequest<?>) packet).createResponse();
+			pduResponse.setCommandStatus(SmppConstants.STATUS_SYSERR);
+			sendResponse(pduResponse);
+			
+			
+    		}
+
 	}
 
 	@Override
@@ -393,7 +441,7 @@ public class ServerConnectionImpl implements ServerConnection {
 	
 	}
 	
-	public void restartEnquireTimer()
+	private void restartEnquireTimer()
 	{
 		enquireTimer.cancel(true);
 		enquireTimer =  monitorExecutor.schedule(new ServerTimerEnquire(this, sessionId),timeoutEnquire,TimeUnit.MILLISECONDS);

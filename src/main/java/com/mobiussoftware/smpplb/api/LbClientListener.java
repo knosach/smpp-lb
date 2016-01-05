@@ -12,5 +12,6 @@ public interface LbClientListener {
 	void connectionLost(Long sessionId, Pdu packet, int serverIndex);
 	void reconnectSuccesful(Long sessionId);
 	void enquireLinkReceivedFromServer(Long sessionId);
+	void unbindRequestedFromServer(Long sessionId, Pdu packet);
 
 }

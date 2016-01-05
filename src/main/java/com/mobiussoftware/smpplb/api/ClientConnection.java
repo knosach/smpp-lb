@@ -10,6 +10,8 @@ public interface ClientConnection {
 	public void packetReceived(Pdu packet);
 	public void sendUnbindRequest(Pdu packet);
 	public void sendSmppRequest(Pdu packet);
-	public void requestTimeout(Pdu packet);	
+	public void requestTimeout(Pdu packet);
+	public void sendSmppResponse(Pdu packet);
+	public void sendUnbindResponse(Pdu packet);	
 
 }
