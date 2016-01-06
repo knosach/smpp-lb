@@ -20,6 +20,7 @@ import com.mobiussoftware.smpplb.impl.ServerConnectionImpl;
 
 public class LbDispatcher implements LbClientListener, LbServerListener {
 
+
 	
 	private Map<Long, ServerConnectionImpl> serverSessions = new ConcurrentHashMap<Long, ServerConnectionImpl>();
 	private Map<Long, ClientConnectionImpl> clientSessions = new ConcurrentHashMap<Long, ClientConnectionImpl>();
@@ -127,6 +128,9 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	public void connectionLost(Long sessionId, Pdu packet, int serverIndex) {
 		
 		serverSessions.get(sessionId).reconnectState(true);
+		//CHANGE ID
+		packet.setSequenceNumber(serverSessions.get(sessionId).getLastSequenceNumber().incrementAndGet());
+		
 		reconnectExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
 		
 	}
@@ -135,13 +139,14 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	public void reconnectSuccesful(Long sessionId) {
 		
 		serverSessions.get(sessionId).reconnectState(false);
+		
 	}
 
 
 	@Override
-	public void checkConnection(Long sessionId) {
-		serverSessions.get(sessionId).generateEnquireLink();
-		clientSessions.get(sessionId).generateEnquireLink();
+	public void checkConnection(Long sessionId, int lastSequenceNumber) {
+		serverSessions.get(sessionId).generateEnquireLink(lastSequenceNumber);
+		clientSessions.get(sessionId).generateEnquireLink(lastSequenceNumber);
 		
 	}
 
@@ -171,9 +176,11 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 
 	@Override
 	public void unbindSuccesfullFromServer(Long sessionId, Pdu packet) {
-		
+		if(clientSessions.get(sessionId)!=null)
+		{
 		clientSessions.get(sessionId).sendUnbindResponse(packet);
 		clientSessions.remove(sessionId);
+		}
 		serverSessions.remove(sessionId);
 		
 	}

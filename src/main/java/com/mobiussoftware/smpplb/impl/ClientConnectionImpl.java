@@ -4,7 +4,9 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.SSLEngine;
 
@@ -31,6 +33,7 @@ import com.cloudhopper.smpp.pdu.EnquireLink;
 import com.cloudhopper.smpp.pdu.Pdu;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
+import com.cloudhopper.smpp.pdu.Unbind;
 import com.cloudhopper.smpp.ssl.SslConfiguration;
 import com.cloudhopper.smpp.ssl.SslContextFactory;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
@@ -41,6 +44,7 @@ import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.mobiussoftware.smpplb.api.ClientConnection;
 import com.mobiussoftware.smpplb.api.LbClientListener;
 import com.mobiussoftware.smpplb.timers.ClientTimerResponse;
+import com.mobiussoftware.smpplb.timers.ClientTimerServerSideConnectionCheck;
 import com.mobiussoftware.smpplb.timers.TimerData;
 
 
@@ -55,6 +59,8 @@ public class ClientConnectionImpl implements ClientConnection
     private Pdu bindPacket;
 	private final PduTranscoder transcoder;
     private ClientState clientState=ClientState.INITIAL;
+    private AtomicInteger lastSequenceNumber = new AtomicInteger(0);
+
 	private LbClientListener lbClientListener;
     private Long sessionId;
  	private Map<Integer, TimerData> paketMap =  new ConcurrentHashMap <Integer, TimerData>();
@@ -62,6 +68,9 @@ public class ClientConnectionImpl implements ClientConnection
     private long timeoutResponse;
     private int serverIndex;
     private boolean isEnquireLinkSent;
+    private ScheduledFuture<?> connectionCheckServerSideTimer;
+    
+    private long timeoutConnectionCheckServerSide;
     
     public boolean isEnquireLinkSent() {
 		return isEnquireLinkSent;
@@ -71,6 +80,9 @@ public class ClientConnectionImpl implements ClientConnection
 	}
     public ClientState getClientState() {
 		return clientState;
+	}
+    public void setClientState(ClientState clientState) {
+		this.clientState = clientState;
 	}
     public Long getSessionId() {
 		return sessionId;
@@ -89,33 +101,14 @@ public class ClientConnectionImpl implements ClientConnection
 		  this.serverIndex = serverIndex;
 		  this.bindPacket = bindPacket;
 		  this.timeoutResponse = Long.parseLong(properties.getProperty("timeoutResponse"));
+		  this.timeoutConnectionCheckServerSide = Long.parseLong(properties.getProperty("timeoutConnectionCheckServerSide"));
 		  this.monitorExecutor = monitorExecutor;
 		  this.sessionId = sessionId;
 		  this.config = config;
 		  this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 		  this.lbClientListener=clientListener;
-		  
 		  this.clientConnectionHandler = new ClientConnectionHandlerImpl(this);	
-		  
           this.clientBootstrap = new ClientBootstrap(new NioClientSocketChannelFactory());
-//          if (config.isUseSsl()) 
-//          {
-//      	    SslConfiguration sslConfig = config.getSslConfiguration();
-//      	    if (sslConfig == null) throw new IllegalStateException("sslConfiguration must be set");
-//      	    try 
-//      	    {
-//      	    	SslContextFactory factory = new SslContextFactory(sslConfig);
-//      	    	SSLEngine sslEngine = factory.newSslEngine();
-//      	    	sslEngine.setUseClientMode(true);
-//      	    	channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_SSL_NAME, new SslHandler(sslEngine));
-//      	    } 
-//      	    catch (Exception e) 
-//      	    {
-//      	    	logger.error("Unable to create SSL session]: " + e.getMessage(), e);
-//      	    	
-//      	    }
-//          }
-          
           this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(transcoder));
           this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnectionHandler);
  		  
@@ -146,9 +139,7 @@ public class ClientConnectionImpl implements ClientConnection
 	      	    	
 	      	    }
 	          }
-			
-			
-			
+
 		} catch (Exception ex) 
 		{
 			return false;
@@ -269,25 +260,25 @@ public class ClientConnectionImpl implements ClientConnection
 				{
 					isEnquireLinkSent = false;
 					this.lbClientListener.enquireLinkReceivedFromServer(sessionId);
-					//notify that connection OK
-					//restart timer in serverimpl
+					connectionCheckServerSideTimer.cancel(true);
+					
 				}
 				break;
 			case SmppConstants.CMD_ID_DATA_SM:
 			case SmppConstants.CMD_ID_DELIVER_SM:
 			case SmppConstants.CMD_ID_ENQUIRE_LINK:
 				correctPacket = true;
-				
+				lastSequenceNumber.set(packet.getSequenceNumber());
 				//start request timer
 				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 				
 				this.lbClientListener.smppEntityRequestFromServer(sessionId, packet);
 				
 				break;
-				//unbind from server
+				
 			case SmppConstants.CMD_ID_UNBIND:
 				correctPacket = true;
-				
+				lastSequenceNumber.set(packet.getSequenceNumber());
 				//start request timer
 				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
 				
@@ -298,7 +289,6 @@ public class ClientConnectionImpl implements ClientConnection
 			}
 			if (!correctPacket){
 				logger.error("Received invalid packet in bound state, packet type: " + packet.getCommandId());
-			
 			}
 			break;
 			
@@ -315,7 +305,10 @@ public class ClientConnectionImpl implements ClientConnection
 				this.lbClientListener.reconnectSuccesful(sessionId);
 				clientState = ClientState.BOUND;
 				}else{
-					//what to do if status not ok
+					
+					//unbind
+					this.lbClientListener.unbindRequestedFromServer(sessionId, new Unbind());
+					
 				}
 				
             }
@@ -415,6 +408,7 @@ public class ClientConnectionImpl implements ClientConnection
 		clientState = ClientState.REBINDING;
 		
 		this.lbClientListener.connectionLost(sessionId, bindPacket, serverIndex);
+		
 	}
 
 	@Override
@@ -437,21 +431,32 @@ public class ClientConnectionImpl implements ClientConnection
 		}
 	}
 	
-	public void generateEnquireLink() {
+	public void generateEnquireLink(int lastSequenceNumber) {
+		
+		Pdu packet = new EnquireLink();
+		packet.setSequenceNumber(lastSequenceNumber);
+		
 		ChannelBuffer buffer = null;
 		try {
-			buffer = transcoder.encode(new EnquireLink());
+			buffer = transcoder.encode(packet);
 			
 		} catch (UnrecoverablePduException | RecoverablePduException e) {
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
 		isEnquireLinkSent = true;
+		connectionCheckServerSideTimer = monitorExecutor.schedule(new ClientTimerServerSideConnectionCheck(this, sessionId),timeoutConnectionCheckServerSide,TimeUnit.MILLISECONDS);
 	}
+	
 	
 	public void closeChannel() {
 		
 		channel.close();
+		
+	}
+	@Override
+	public void connectionCheckServerSide(Long sessionId) {
+		rebind();
 		
 	}
 	

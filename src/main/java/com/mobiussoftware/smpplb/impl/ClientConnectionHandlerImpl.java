@@ -51,7 +51,7 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 
 		
 		//if disconnect was not correct try to reconnect
-		if(!correctDisconnect&&!listener.isEnquireLinkSent())
+		if(!correctDisconnect)
 		{
 			
 			listener.rebind();
@@ -63,7 +63,9 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 	@Override
 	public void channelClosed(ChannelHandlerContext ctx, ChannelStateEvent e){
 		
+		
 		System.out.println("Client channel closed");
+		
 	}
 
 }

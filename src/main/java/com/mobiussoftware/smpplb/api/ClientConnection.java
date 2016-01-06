@@ -12,6 +12,7 @@ public interface ClientConnection {
 	public void sendSmppRequest(Pdu packet);
 	public void requestTimeout(Pdu packet);
 	public void sendSmppResponse(Pdu packet);
-	public void sendUnbindResponse(Pdu packet);	
+	public void sendUnbindResponse(Pdu packet);
+	public void connectionCheckServerSide(Long sessionId);	
 
 }
