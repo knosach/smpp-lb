@@ -10,7 +10,6 @@ public interface ServerConnection {
 	public void sendResponse(Pdu packet);
 	public void requestTimeout(Pdu packet);
 	public void connectionTimeout(Long sessionId);
-	//public void inactivityTimeout(Long sessionId);
 	public void enquireTimeout(Long sessionId);
 	public void connectionCheck(Long sessionId);
 	public void sendUnbindRequest(Pdu packet);

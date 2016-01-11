@@ -3,11 +3,11 @@ package com.mobiussoftware.smpplb.timers;
 import com.cloudhopper.smpp.pdu.Pdu;
 import com.mobiussoftware.smpplb.api.ClientConnection;
 
-public class ClientTimerResponse implements Runnable {
+public class ClientTimerResponse implements CancellableRunnable {
 	
 	ClientConnection client;
-	Pdu packet;
-	
+	private Boolean cancelled=false;
+	Pdu packet;	
 
 	public ClientTimerResponse(ClientConnection client, Pdu packet) 
 	{
@@ -18,7 +18,13 @@ public class ClientTimerResponse implements Runnable {
 	@Override
 	public void run() 
 	{
-		client.requestTimeout(packet);
+		if(!cancelled)
+			client.requestTimeout(packet);
 	}
 
+	@Override
+	public void cancel() 
+	{
+		this.cancelled=true;
+	}
 }

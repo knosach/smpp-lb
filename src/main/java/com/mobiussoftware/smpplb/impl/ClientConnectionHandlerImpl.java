@@ -8,16 +8,13 @@ import org.jboss.netty.channel.SimpleChannelHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.mobiussoftware.smpplb.impl.ClientConnectionImpl.ClientState;
 
 public class ClientConnectionHandlerImpl extends SimpleChannelHandler  
 {	
 	
 	private static final Logger logger = LoggerFactory.getLogger(ClientConnectionHandlerImpl.class);
 	private ClientConnectionImpl listener = null;
-	private boolean correctDisconnect = false;
 	
 	public ClientConnectionHandlerImpl(ClientConnectionImpl listener)
 	{
@@ -28,13 +25,8 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
      public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) 
 	 {		 
 		if (e.getMessage() instanceof Pdu) 
-		{
-			
+		{			
 	            Pdu pdu = (Pdu)e.getMessage();
-	            
-	            if((pdu.getCommandId() == SmppConstants.CMD_ID_UNBIND_RESP)&&listener.getClientState() == ClientState.UNBINDING)
-	            	correctDisconnect = true;
-	            
 	            listener.packetReceived(pdu);
 	    }
      }
@@ -42,30 +34,12 @@ public class ClientConnectionHandlerImpl extends SimpleChannelHandler
 	@Override
 	public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e)
 	{
-		logger.error(e.toString());
-		
+		logger.error(e.getCause().getMessage(),e);		
 	}
+	
 	@Override
 	public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e)
 	{
-
-		
-		//if disconnect was not correct try to reconnect
-		if(!correctDisconnect)
-		{
-			
-			listener.rebind();
-
-		}
-
+		listener.rebind();
 	}
-
-	@Override
-	public void channelClosed(ChannelHandlerContext ctx, ChannelStateEvent e){
-		
-		
-		System.out.println("Client channel closed");
-		
-	}
-
 }

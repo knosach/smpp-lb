@@ -8,12 +8,20 @@ public class TimerData {
 	
 	Pdu paket;
 	ScheduledFuture <?> scheduledFuture;
+	CancellableRunnable runnable;
 	
-	public TimerData(Pdu paket,ScheduledFuture <?> scheduledFuture){
+	public TimerData(Pdu paket,ScheduledFuture <?> scheduledFuture,CancellableRunnable runnable)
+	{
 		this.paket = paket;
+		this.runnable=runnable;
 		this.scheduledFuture = scheduledFuture;
 	}
 
+	public CancellableRunnable getRunnable()
+	{
+		return runnable;
+	}
+	
 	public Pdu getPaket() {
 		return paket;
 	}

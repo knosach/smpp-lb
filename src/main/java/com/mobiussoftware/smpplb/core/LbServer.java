@@ -49,7 +49,6 @@ public class LbServer{
         this.serverBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, this.serverConnector);
         this.sessionIdSequence = new AtomicLong(0);        
         this.counters = new DefaultSmppServerCounters();
-        
     }
 	    
 	public void start() 
@@ -62,7 +61,6 @@ public class LbServer{
 	        catch (ChannelException e) 
 	        {
 	        	logger.error("Smpp Channel Exception:", e);
-	            //throw new SmppChannelException(e.getMessage(), e);
 	        }
 	}
 	

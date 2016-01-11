@@ -93,16 +93,12 @@ public class LbStarter {
 				}
 			}
 		}, 3000, 2000);
-        
-        
-        
-        
+
         start(properties);
 	}
 	
 	public void start(Properties properties)
 	{
-		
         ThreadPoolExecutor executor = (ThreadPoolExecutor)Executors.newCachedThreadPool();
         SmppServerConfiguration configuration = new SmppServerConfiguration();
         configuration.setName(properties.getProperty("name"));

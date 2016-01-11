@@ -12,7 +12,6 @@ import com.mobiussoftware.smpplb.impl.ClientConnectionImpl.ClientState;
 
 public class BinderRunnable implements Runnable {
 
-	
 	private int index;
 	private Pdu packet;
 	private ClientConnectionImpl client;
@@ -34,7 +33,6 @@ public class BinderRunnable implements Runnable {
 		this.remoteServers = remoteServers;
 		this.serverSessions = serverSessions;
 		this.clientSessions = clientSessions;
-
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -42,12 +40,9 @@ public class BinderRunnable implements Runnable {
 	public void run() {
 		boolean connectSuccesful = true;
 		while (!client.connect()) {
-
-			
 			index ++;
 			if (index == remoteServers.length)	index = 0;
 			if (index == firstServer) {
-
 				connectSuccesful = false;
 				break;
 			}
@@ -55,11 +50,10 @@ public class BinderRunnable implements Runnable {
 			client.getConfig().setHost(remoteServers[index].getIP());
 			client.getConfig().setPort(remoteServers[index].getPort());
 		}
-
-		if (connectSuccesful) {
-
+		
+		if (connectSuccesful) 
+		{
 			client.bind();
-
 		} else {
 
 			if (client.getClientState() == ClientState.INITIAL) 
@@ -67,8 +61,6 @@ public class BinderRunnable implements Runnable {
 				BaseBindResp bindResponse = (BaseBindResp) ((BaseBind) packet).createResponse();
 				bindResponse.setCommandStatus(SmppConstants.STATUS_SYSERR);
 				bindResponse.setSystemId(client.getConfig().getSystemId());
-				// if the server supports an SMPP server version >= 3.4 AND the bind request
-				// included an interface version >= 3.4, include an optional parameter with configured sc_interface_version TLV
 				if (client.getConfig().getInterfaceVersion() >= SmppConstants.VERSION_3_4 && ((BaseBind) packet).getInterfaceVersion() >= SmppConstants.VERSION_3_4) {
 					Tlv scInterfaceVersion = new Tlv(SmppConstants.TAG_SC_INTERFACE_VERSION, new byte[] { client.getConfig().getInterfaceVersion() });
 					bindResponse.addOptionalParameter(scInterfaceVersion);
@@ -79,13 +71,10 @@ public class BinderRunnable implements Runnable {
 				serverSessions.remove(sessionId);
 			} else 
 			{
-
 				serverSessions.get(sessionId).sendUnbindRequest(new Unbind());
 				clientSessions.remove(sessionId);
 
 			}
-
 		}
-
 	}
 }

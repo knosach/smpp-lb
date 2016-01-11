@@ -57,11 +57,9 @@ public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
         }
 
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(new DefaultPduTranscoder(new DefaultPduTranscoderContext())));
-
         ServerConnectionImpl serverConnectionImpl = new ServerConnectionImpl(server.nextSessionId(),channel,lbServerListener, properties, monitorExecutor);
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, new ServerConnectionHandlerImpl(serverConnectionImpl));
-  
-    }
+      }
 
     @Override
     public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception 
@@ -69,5 +67,4 @@ public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
     	channels.remove(e.getChannel());
     	this.server.getCounters().incrementChannelDisconnectsAndGet();
     }
-
 }

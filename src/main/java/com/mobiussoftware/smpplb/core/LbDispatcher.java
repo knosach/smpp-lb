@@ -20,12 +20,8 @@ import com.mobiussoftware.smpplb.impl.ServerConnectionImpl;
 
 public class LbDispatcher implements LbClientListener, LbServerListener {
 
-
-	
 	private Map<Long, ServerConnectionImpl> serverSessions = new ConcurrentHashMap<Long, ServerConnectionImpl>();
 	private Map<Long, ClientConnectionImpl> clientSessions = new ConcurrentHashMap<Long, ClientConnectionImpl>();
-	
-	private ScheduledExecutorService reconnectExecutor = Executors.newScheduledThreadPool(2);
 	
 	private RemoteServer [] remoteServers;
 	private AtomicInteger i = new AtomicInteger(0);
@@ -33,7 +29,7 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	private ScheduledExecutorService monitorExecutor; 
 	private ExecutorService handlerService = Executors.newCachedThreadPool();
 	private long reconnectPeriod;
-	
+		
 	public LbDispatcher(Properties properties, ScheduledExecutorService monitorExecutor)
 	{
 		this.reconnectPeriod = Long.parseLong(properties.getProperty("reconnectPeriod"));
@@ -49,7 +45,6 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 			System.out.println(remoteServers[i]);
 		}
 	}
-
 	
 	@Override
 	public void bindRequested(Long sessionId, ServerConnectionImpl serverConnection, Pdu packet)  
@@ -74,7 +69,6 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		
 	}
 
-
 	@Override
 	public void bindSuccesfull(long sessionID, Pdu packet) 
 	{
@@ -87,7 +81,6 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 		serverSessions.get(sessionID).sendUnbindResponse(packet);
 		clientSessions.remove(sessionID);
 		serverSessions.remove(sessionID);
-
 	}
 
 	@Override
@@ -113,76 +106,65 @@ public class LbDispatcher implements LbClientListener, LbServerListener {
 	}
 	
 	@Override
-	public void smppEntityRequestFromServer(Long sessionId, Pdu packet) {
-		
+	public void smppEntityRequestFromServer(Long sessionId, Pdu packet) 
+	{
 		serverSessions.get(sessionId).sendRequest(packet);
 	}
 	
 	@Override
-	public void smppEntityResponseFromClient(Long sessionId, Pdu packet) {
+	public void smppEntityResponseFromClient(Long sessionId, Pdu packet) 
+	{
 		clientSessions.get(sessionId).sendSmppResponse(packet);
-		
 	}
 
 	@Override
-	public void connectionLost(Long sessionId, Pdu packet, int serverIndex) {
-		
+	public void connectionLost(Long sessionId, Pdu packet, int serverIndex) 
+	{
 		serverSessions.get(sessionId).reconnectState(true);
-		//CHANGE ID
-		packet.setSequenceNumber(serverSessions.get(sessionId).getLastSequenceNumber().incrementAndGet());
-		
-		reconnectExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
-		
+		monitorExecutor.schedule(new BinderRunnable(sessionId, packet, serverSessions, clientSessions, serverIndex, remoteServers), reconnectPeriod, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
-	public void reconnectSuccesful(Long sessionId) {
-		
+	public void reconnectSuccesful(Long sessionId) 
+	{
 		serverSessions.get(sessionId).reconnectState(false);
-		
 	}
 
-
 	@Override
-	public void checkConnection(Long sessionId, int lastSequenceNumber) {
-		serverSessions.get(sessionId).generateEnquireLink(lastSequenceNumber);
-		clientSessions.get(sessionId).generateEnquireLink(lastSequenceNumber);
-		
+	public void checkConnection(Long sessionId) 
+	{
+		serverSessions.get(sessionId).generateEnquireLink();
+		clientSessions.get(sessionId).generateEnquireLink();	
 	}
 
-
 	@Override
-	public void enquireLinkReceivedFromServer(Long sessionId) {
-		serverSessions.get(sessionId).serverSideOk();
-		
+	public void enquireLinkReceivedFromServer(Long sessionId) 
+	{
+		serverSessions.get(sessionId).serverSideOk();		
 	}
 
-
 	@Override
-	public void closeConnection(Long sessionId) {
+	public void closeConnection(Long sessionId) 
+	{
 		clientSessions.get(sessionId).closeChannel();
 		clientSessions.remove(sessionId);
 		serverSessions.remove(sessionId);
-		
 	}
 
-
 	@Override
-	public void unbindRequestedFromServer(Long sessionId, Pdu packet) {
+	public void unbindRequestedFromServer(Long sessionId, Pdu packet) 
+	{
 		serverSessions.get(sessionId).sendUnbindRequest(packet);
-		
 	}
 
-
 	@Override
-	public void unbindSuccesfullFromServer(Long sessionId, Pdu packet) {
+	public void unbindSuccesfullFromServer(Long sessionId, Pdu packet)
+	{
 		if(clientSessions.get(sessionId)!=null)
 		{
-		clientSessions.get(sessionId).sendUnbindResponse(packet);
-		clientSessions.remove(sessionId);
+			clientSessions.get(sessionId).sendUnbindResponse(packet);
+			clientSessions.remove(sessionId);
 		}
-		serverSessions.remove(sessionId);
-		
+		serverSessions.remove(sessionId);		
 	}
-
 }

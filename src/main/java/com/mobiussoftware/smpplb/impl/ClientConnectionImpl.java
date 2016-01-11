@@ -30,6 +30,7 @@ import com.cloudhopper.smpp.pdu.BindReceiver;
 import com.cloudhopper.smpp.pdu.BindTransceiver;
 import com.cloudhopper.smpp.pdu.BindTransmitter;
 import com.cloudhopper.smpp.pdu.EnquireLink;
+import com.cloudhopper.smpp.pdu.EnquireLinkResp;
 import com.cloudhopper.smpp.pdu.Pdu;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
@@ -59,16 +60,19 @@ public class ClientConnectionImpl implements ClientConnection
     private Pdu bindPacket;
 	private final PduTranscoder transcoder;
     private ClientState clientState=ClientState.INITIAL;
-    private AtomicInteger lastSequenceNumber = new AtomicInteger(0);
+    private AtomicInteger lastSequenceNumberSent = new AtomicInteger(0);
 
 	private LbClientListener lbClientListener;
     private Long sessionId;
- 	private Map<Integer, TimerData> paketMap =  new ConcurrentHashMap <Integer, TimerData>();
+ 	private Map<Integer, TimerData> packetMap =  new ConcurrentHashMap <Integer, TimerData>();
+ 	private Map<Integer, Integer> sequenceMap =  new ConcurrentHashMap <Integer, Integer>();
     private ScheduledExecutorService monitorExecutor;
     private long timeoutResponse;
     private int serverIndex;
     private boolean isEnquireLinkSent;
-    private ScheduledFuture<?> connectionCheckServerSideTimer;
+    
+    private ScheduledFuture<?> connectionCheckServerSideTimer;    
+    private ClientTimerServerSideConnectionCheck connectionCheck;
     
     private long timeoutConnectionCheckServerSide;
     
@@ -93,7 +97,6 @@ public class ClientConnectionImpl implements ClientConnection
     	INITIAL, OPEN, BINDING, BOUND, REBINDING, UNBINDING, CLOSED    	
     }
     
-    
 	public  ClientConnectionImpl(Long sessionId,SmppSessionConfiguration config, LbClientListener clientListener, ScheduledExecutorService monitorExecutor, 
 			Properties properties, Pdu bindPacket, int serverIndex) 
 	{
@@ -110,8 +113,7 @@ public class ClientConnectionImpl implements ClientConnection
 		  this.clientConnectionHandler = new ClientConnectionHandlerImpl(this);	
           this.clientBootstrap = new ClientBootstrap(new NioClientSocketChannelFactory());
           this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(transcoder));
-          this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnectionHandler);
- 		  
+          this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnectionHandler); 		  
 	}
 	
 	@Override
@@ -155,7 +157,6 @@ public class ClientConnectionImpl implements ClientConnection
 	@Override
 	public void bind()
 	{
-		//CREATE PACKET
 		 BaseBind packet = null;
 	        if (config.getType() == SmppBindType.TRANSCEIVER) 
 	        	packet = new BindTransceiver();
@@ -170,8 +171,7 @@ public class ClientConnectionImpl implements ClientConnection
 	        packet.setSystemType(config.getSystemType());
 	        packet.setInterfaceVersion(config.getInterfaceVersion());
 	        packet.setAddressRange(config.getAddressRange());
-	        //sequence number of bind packet is 1 always
-	        packet.setSequenceNumber(1);
+	        packet.setSequenceNumber(lastSequenceNumberSent.incrementAndGet());
   
 	        ChannelBuffer buffer = null;
 			try {
@@ -223,12 +223,9 @@ public class ClientConnectionImpl implements ClientConnection
 					clientState = ClientState.BOUND;
 
 				} else {
-
-					// HANDLE ERROR
-					// EITHER RETRY OR FORWARD ERROR TO CLIENT AND CLOSE THE CLIENT CONNECTION AND MAPPING
 					logger.info("Client " + config.getSystemId() + " bound unsuccesful, error code: " + packet.getCommandStatus());
 					lbClientListener.bindFailed(sessionId, packet);
-					channel.close();
+					closeChannel();
 					clientState = ClientState.CLOSED;
 				}
 			}
@@ -244,43 +241,42 @@ public class ClientConnectionImpl implements ClientConnection
 			case SmppConstants.CMD_ID_REPLACE_SM_RESP:
 			case SmppConstants.CMD_ID_SUBMIT_SM_RESP:
 			case SmppConstants.CMD_ID_SUBMIT_MULTI_RESP:
+				Integer originalSequence=sequenceMap.remove(packet.getSequenceNumber());
+				if(originalSequence!=null)
+				{
+					packet.setSequenceNumber(originalSequence);
+					correctPacket = true;
+					this.lbClientListener.smppEntityResponse(sessionId, packet);
+				}
+				break;
 			case SmppConstants.CMD_ID_GENERIC_NACK:
-
 				correctPacket = true;
 				this.lbClientListener.smppEntityResponse(sessionId, packet);
-
 				break;
-				
 			case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
 				correctPacket = true;
-				if(!isEnquireLinkSent)
-				{
-					this.lbClientListener.smppEntityResponse(sessionId, packet);
-				}else
-				{
-					isEnquireLinkSent = false;
-					this.lbClientListener.enquireLinkReceivedFromServer(sessionId);
-					connectionCheckServerSideTimer.cancel(true);
-					
-				}
+				isEnquireLinkSent = false;
+				connectionCheck.cancel();
+				connectionCheckServerSideTimer.cancel(false);
+				this.lbClientListener.enquireLinkReceivedFromServer(sessionId);				
 				break;
 			case SmppConstants.CMD_ID_DATA_SM:
 			case SmppConstants.CMD_ID_DELIVER_SM:
+				correctPacket = true;
+				ClientTimerResponse response=new ClientTimerResponse(this ,packet);
+				packetMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(response,timeoutResponse,TimeUnit.MILLISECONDS),response));				
+				this.lbClientListener.smppEntityRequestFromServer(sessionId, packet);				
+				break;
 			case SmppConstants.CMD_ID_ENQUIRE_LINK:
 				correctPacket = true;
-				lastSequenceNumber.set(packet.getSequenceNumber());
-				//start request timer
-				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
-				
-				this.lbClientListener.smppEntityRequestFromServer(sessionId, packet);
-				
-				break;
-				
+				EnquireLinkResp resp=new EnquireLinkResp();
+				resp.setSequenceNumber(packet.getSequenceNumber());
+				sendSmppResponse(resp);
+				break;		
 			case SmppConstants.CMD_ID_UNBIND:
 				correctPacket = true;
-				lastSequenceNumber.set(packet.getSequenceNumber());
-				//start request timer
-				paketMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(new ClientTimerResponse(this ,packet),timeoutResponse,TimeUnit.MILLISECONDS)));
+				response=new ClientTimerResponse(this ,packet);
+				packetMap.put(packet.getSequenceNumber(), new TimerData(packet, monitorExecutor.schedule(response,timeoutResponse,TimeUnit.MILLISECONDS),response));
 				
 				lbClientListener.unbindRequestedFromServer(sessionId, packet);
 				clientState = ClientState.UNBINDING;
@@ -300,19 +296,13 @@ public class ClientConnectionImpl implements ClientConnection
 			case SmppConstants.CMD_ID_BIND_TRANSCEIVER_RESP:
 			case SmppConstants.CMD_ID_BIND_TRANSMITTER_RESP:
 				if (packet.getCommandStatus() == SmppConstants.STATUS_OK){
-				//notificate that connection is ok
 				logger.info("Connection reconnected for sessionId : " + sessionId);
 				this.lbClientListener.reconnectSuccesful(sessionId);
 				clientState = ClientState.BOUND;
 				}else{
-					
-					//unbind
 					this.lbClientListener.unbindRequestedFromServer(sessionId, new Unbind());
-					
 				}
-				
             }
-
 			break;
 			
 		case UNBINDING:
@@ -324,11 +314,16 @@ public class ClientConnectionImpl implements ClientConnection
 			if (!correctPacket)
 				logger.error("Received invalid packet in unbinding state,packet type:" + packet.getCommandId());
 			else {
-
-				this.lbClientListener.unbindSuccesfull(sessionId, packet);
-
-				paketMap.clear();
-				channel.close();
+				Integer originalSequence=sequenceMap.remove(packet.getSequenceNumber());
+				if(originalSequence!=null)
+				{
+					packet.setSequenceNumber(originalSequence);
+					this.lbClientListener.unbindSuccesfull(sessionId, packet);
+				}
+				
+				sequenceMap.clear();
+				packetMap.clear();
+				closeChannel();
 				clientState = ClientState.CLOSED;
 			}
 			break;
@@ -340,7 +335,10 @@ public class ClientConnectionImpl implements ClientConnection
 	
 	@Override
 	public void sendUnbindRequest(Pdu packet)
-	{
+	{		
+		Integer currSequence=lastSequenceNumberSent.incrementAndGet();
+		sequenceMap.put(currSequence, packet.getSequenceNumber());
+		packet.setSequenceNumber(currSequence);
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -352,12 +350,14 @@ public class ClientConnectionImpl implements ClientConnection
 
 		channel.write(buffer);
 		clientState = ClientState.UNBINDING;
-		
 	}
 	
 	@Override
 	public void sendSmppRequest(Pdu packet) 
-	{
+	{		
+		Integer currSequence=lastSequenceNumberSent.incrementAndGet();
+		sequenceMap.put(currSequence, packet.getSequenceNumber());
+		packet.setSequenceNumber(currSequence);
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -370,10 +370,18 @@ public class ClientConnectionImpl implements ClientConnection
 		channel.write(buffer);
 	}
 	@Override
-	public void sendSmppResponse(Pdu packet) {
+	public void sendSmppResponse(Pdu packet) 
+	{
 		
-		if(paketMap.containsKey(packet.getSequenceNumber()))
-			paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
+		if(packetMap.containsKey(packet.getSequenceNumber()))
+		{
+			TimerData data=packetMap.remove(packet.getSequenceNumber());
+			if(data!=null)
+			{
+				data.getRunnable().cancel();
+				data.getScheduledFuture().cancel(false);
+			}
+		}
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -387,10 +395,18 @@ public class ClientConnectionImpl implements ClientConnection
 	@Override
      public void sendUnbindResponse(Pdu packet) {
 		
-		if(paketMap.containsKey(packet.getSequenceNumber()))
-			paketMap.remove(packet.getSequenceNumber()).getScheduledFuture().cancel(true);
-		 ChannelBuffer buffer = null;
-			try {
+		if(packetMap.containsKey(packet.getSequenceNumber()))
+		{
+			TimerData data=packetMap.remove(packet.getSequenceNumber());
+			if(data!=null)
+			{
+				data.getRunnable().cancel();
+				data.getScheduledFuture().cancel(false);
+			}
+		}
+		 
+		ChannelBuffer buffer = null;
+		try {
 				buffer = transcoder.encode(packet);
 				
 			} catch (UnrecoverablePduException | RecoverablePduException e) {
@@ -398,15 +414,20 @@ public class ClientConnectionImpl implements ClientConnection
 			}
 			channel.write(buffer);
 			clientState = ClientState.CLOSED;
-			paketMap.clear();
-			channel.close();
+			sequenceMap.clear();
+			packetMap.clear();
+			closeChannel();
 		
 	}
 	
 	@Override
 	public void rebind() {
-		clientState = ClientState.REBINDING;
+		StackTraceElement[] elements=Thread.currentThread().getStackTrace();
+		for(int i=0;i<elements.length;i++)
+			System.out.println(elements[i].getClassName() + ":" + elements[i].getLineNumber() + ":" + elements[i].getMethodName());
 		
+		
+		clientState = ClientState.REBINDING;		
 		this.lbClientListener.connectionLost(sessionId, bindPacket, serverIndex);
 		
 	}
@@ -414,27 +435,23 @@ public class ClientConnectionImpl implements ClientConnection
 	@Override
 	public void requestTimeout(Pdu packet) 
 	{
-
-    	if(!paketMap.containsKey(packet.getSequenceNumber()))
+		if(!packetMap.containsKey(packet.getSequenceNumber()))
     		logger.info("(requestTimeout)We take SMPP response from client in time");
 		else
 		{
 			logger.info("(requestTimeout)We did NOT take SMPP response from client in time");
 			
-		paketMap.remove(packet.getSequenceNumber());
+		packetMap.remove(packet.getSequenceNumber());
     	PduResponse pduResponse = ((PduRequest<?>) packet).createResponse();
 		pduResponse.setCommandStatus(SmppConstants.STATUS_SYSERR);
-
 		sendSmppResponse(pduResponse);
-		
-		
 		}
 	}
 	
-	public void generateEnquireLink(int lastSequenceNumber) {
-		
+	public void generateEnquireLink() 
+	{		
 		Pdu packet = new EnquireLink();
-		packet.setSequenceNumber(lastSequenceNumber);
+		packet.setSequenceNumber(lastSequenceNumberSent.incrementAndGet());
 		
 		ChannelBuffer buffer = null;
 		try {
@@ -445,19 +462,22 @@ public class ClientConnectionImpl implements ClientConnection
 		}
 		channel.write(buffer);
 		isEnquireLinkSent = true;
-		connectionCheckServerSideTimer = monitorExecutor.schedule(new ClientTimerServerSideConnectionCheck(this, sessionId),timeoutConnectionCheckServerSide,TimeUnit.MILLISECONDS);
+		connectionCheck=new ClientTimerServerSideConnectionCheck(this, sessionId);
+		connectionCheckServerSideTimer = monitorExecutor.schedule(connectionCheck,timeoutConnectionCheckServerSide,TimeUnit.MILLISECONDS);
 	}
 	
-	
-	public void closeChannel() {
+	public void closeChannel() 
+	{
+		while(channel.getPipeline().getLast()!=null)
+			channel.getPipeline().removeLast();
 		
-		channel.close();
-		
+		channel.close();		
 	}
+	
 	@Override
-	public void connectionCheckServerSide(Long sessionId) {
-		rebind();
-		
+	public void connectionCheckServerSide(Long sessionId) 
+	{
+		rebind();		
 	}
 	
 }
