@@ -1,7 +1,8 @@
-package com.mobiussoftware.smpplb.timers;
+package org.mobicents.tools.smpp.balancer.timers;
+
+import org.mobicents.tools.smpp.balancer.api.ClientConnection;
 
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.mobiussoftware.smpplb.api.ClientConnection;
 
 public class ClientTimerResponse implements CancellableRunnable {
 	

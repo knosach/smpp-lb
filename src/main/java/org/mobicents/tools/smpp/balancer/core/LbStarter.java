@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.core;
+package org.mobicents.tools.smpp.balancer.core;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -101,9 +101,9 @@ public class LbStarter {
 	{
         ThreadPoolExecutor executor = (ThreadPoolExecutor)Executors.newCachedThreadPool();
         SmppServerConfiguration configuration = new SmppServerConfiguration();
-        configuration.setName(properties.getProperty("name"));
-        configuration.setHost(properties.getProperty("host"));
-        configuration.setPort(Integer.parseInt(properties.getProperty("port")));
+        configuration.setName(properties.getProperty("smppName"));
+        configuration.setHost(properties.getProperty("smppHost"));
+        configuration.setPort(Integer.parseInt(properties.getProperty("smppPort")));
         configuration.setMaxConnectionSize(Integer.parseInt(properties.getProperty("maxConnectionSize")));
         configuration.setNonBlockingSocketsEnabled(Boolean.parseBoolean(properties.getProperty("nonBlockingSocketsEnabled")));
         configuration.setDefaultSessionCountersEnabled(Boolean.parseBoolean(properties.getProperty("defaultSessionCountersEnabled")));

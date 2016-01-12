@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.timers;
+package org.mobicents.tools.smpp.balancer.timers;
 
 import java.util.concurrent.ScheduledFuture;
 

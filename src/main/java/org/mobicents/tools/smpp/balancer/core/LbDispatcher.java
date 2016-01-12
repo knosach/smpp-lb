@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.core;
+package org.mobicents.tools.smpp.balancer.core;
 
 import java.util.Map;
 import java.util.Properties;
@@ -9,14 +9,15 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.mobicents.tools.smpp.balancer.api.LbClientListener;
+import org.mobicents.tools.smpp.balancer.api.LbServerListener;
+import org.mobicents.tools.smpp.balancer.impl.BinderRunnable;
+import org.mobicents.tools.smpp.balancer.impl.ClientConnectionImpl;
+import org.mobicents.tools.smpp.balancer.impl.RemoteServer;
+import org.mobicents.tools.smpp.balancer.impl.ServerConnectionImpl;
+
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.mobiussoftware.smpplb.api.LbClientListener;
-import com.mobiussoftware.smpplb.api.LbServerListener;
-import com.mobiussoftware.smpplb.impl.BinderRunnable;
-import com.mobiussoftware.smpplb.impl.ClientConnectionImpl;
-import com.mobiussoftware.smpplb.impl.RemoteServer;
-import com.mobiussoftware.smpplb.impl.ServerConnectionImpl;
 
 public class LbDispatcher implements LbClientListener, LbServerListener {
 

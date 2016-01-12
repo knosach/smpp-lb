@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.core;
+package org.mobicents.tools.smpp.balancer.core;
 
 import java.net.InetSocketAddress;
 import java.util.Properties;
@@ -13,13 +13,13 @@ import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.jboss.netty.channel.socket.oio.OioServerSocketChannelFactory;
+import org.mobicents.tools.smpp.balancer.impl.ServerChannelConnector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.cloudhopper.smpp.SmppServerConfiguration;
 import com.cloudhopper.smpp.channel.SmppChannelConstants;
 import com.cloudhopper.smpp.impl.DefaultSmppServerCounters;
-import com.mobiussoftware.smpplb.impl.ServerChannelConnector;
 
 public class LbServer{
 

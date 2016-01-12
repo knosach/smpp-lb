@@ -1,7 +1,8 @@
-package com.mobiussoftware.smpplb.api;
+package org.mobicents.tools.smpp.balancer.api;
+
+import org.mobicents.tools.smpp.balancer.impl.ServerConnectionImpl;
 
 import com.cloudhopper.smpp.pdu.Pdu;
-import com.mobiussoftware.smpplb.impl.ServerConnectionImpl;
 
 public interface LbServerListener {
 	

@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package org.mobicents.tools.smpp.balancer.impl;
 
 public class RemoteServer{
 	private String ip;

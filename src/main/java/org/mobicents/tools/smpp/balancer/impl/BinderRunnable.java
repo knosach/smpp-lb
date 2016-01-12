@@ -1,6 +1,8 @@
-package com.mobiussoftware.smpplb.impl;
+package org.mobicents.tools.smpp.balancer.impl;
 
 import java.util.Map;
+
+import org.mobicents.tools.smpp.balancer.impl.ClientConnectionImpl.ClientState;
 
 import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.pdu.BaseBind;
@@ -8,7 +10,6 @@ import com.cloudhopper.smpp.pdu.BaseBindResp;
 import com.cloudhopper.smpp.pdu.Pdu;
 import com.cloudhopper.smpp.pdu.Unbind;
 import com.cloudhopper.smpp.tlv.Tlv;
-import com.mobiussoftware.smpplb.impl.ClientConnectionImpl.ClientState;
 
 public class BinderRunnable implements Runnable {
 

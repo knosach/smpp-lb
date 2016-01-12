@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.api;
+package org.mobicents.tools.smpp.balancer.api;
 
 import com.cloudhopper.smpp.pdu.Pdu;
 

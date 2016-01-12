@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package org.mobicents.tools.smpp.balancer.impl;
 
 import java.util.Properties;
 import java.util.concurrent.Executors;
@@ -12,6 +12,9 @@ import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.handler.ssl.SslHandler;
+import org.mobicents.tools.smpp.balancer.api.LbServerListener;
+import org.mobicents.tools.smpp.balancer.core.LbDispatcher;
+import org.mobicents.tools.smpp.balancer.core.LbServer;
 
 import com.cloudhopper.smpp.channel.SmppChannelConstants;
 import com.cloudhopper.smpp.channel.SmppSessionPduDecoder;
@@ -19,9 +22,6 @@ import com.cloudhopper.smpp.ssl.SslConfiguration;
 import com.cloudhopper.smpp.ssl.SslContextFactory;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
-import com.mobiussoftware.smpplb.api.LbServerListener;
-import com.mobiussoftware.smpplb.core.LbDispatcher;
-import com.mobiussoftware.smpplb.core.LbServer;
 
 public class ServerChannelConnector extends SimpleChannelUpstreamHandler {
 

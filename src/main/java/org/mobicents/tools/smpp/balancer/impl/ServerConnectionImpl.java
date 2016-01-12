@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package org.mobicents.tools.smpp.balancer.impl;
 
 import java.util.Map;
 import java.util.Properties;
@@ -10,6 +10,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.util.internal.ConcurrentHashMap;
+import org.mobicents.tools.smpp.balancer.api.LbServerListener;
+import org.mobicents.tools.smpp.balancer.api.ServerConnection;
+import org.mobicents.tools.smpp.balancer.timers.ServerTimerConnection;
+import org.mobicents.tools.smpp.balancer.timers.ServerTimerConnectionCheck;
+import org.mobicents.tools.smpp.balancer.timers.ServerTimerEnquire;
+import org.mobicents.tools.smpp.balancer.timers.ServerTimerResponse;
+import org.mobicents.tools.smpp.balancer.timers.TimerData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,13 +35,6 @@ import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.transcoder.PduTranscoder;
 import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
-import com.mobiussoftware.smpplb.api.LbServerListener;
-import com.mobiussoftware.smpplb.api.ServerConnection;
-import com.mobiussoftware.smpplb.timers.ServerTimerConnectionCheck;
-import com.mobiussoftware.smpplb.timers.ServerTimerResponse;
-import com.mobiussoftware.smpplb.timers.ServerTimerConnection;
-import com.mobiussoftware.smpplb.timers.ServerTimerEnquire;
-import com.mobiussoftware.smpplb.timers.TimerData;
 
 public class ServerConnectionImpl implements ServerConnection {
 	
@@ -255,7 +255,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 				channel.write(buffer);
@@ -281,7 +283,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
@@ -306,7 +310,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
@@ -323,7 +329,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		
@@ -341,7 +349,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(genericNack);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
@@ -356,7 +366,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 
@@ -423,7 +435,9 @@ public class ServerConnectionImpl implements ServerConnection {
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		}catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);		

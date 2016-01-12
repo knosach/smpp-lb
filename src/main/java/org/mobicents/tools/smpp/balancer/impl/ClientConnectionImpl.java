@@ -1,4 +1,4 @@
-package com.mobiussoftware.smpplb.impl;
+package org.mobicents.tools.smpp.balancer.impl;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -17,6 +17,11 @@ import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.util.internal.ConcurrentHashMap;
+import org.mobicents.tools.smpp.balancer.api.ClientConnection;
+import org.mobicents.tools.smpp.balancer.api.LbClientListener;
+import org.mobicents.tools.smpp.balancer.timers.ClientTimerResponse;
+import org.mobicents.tools.smpp.balancer.timers.ClientTimerServerSideConnectionCheck;
+import org.mobicents.tools.smpp.balancer.timers.TimerData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,11 +47,6 @@ import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.transcoder.PduTranscoder;
 import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
-import com.mobiussoftware.smpplb.api.ClientConnection;
-import com.mobiussoftware.smpplb.api.LbClientListener;
-import com.mobiussoftware.smpplb.timers.ClientTimerResponse;
-import com.mobiussoftware.smpplb.timers.ClientTimerServerSideConnectionCheck;
-import com.mobiussoftware.smpplb.timers.TimerData;
 
 
 public class ClientConnectionImpl implements ClientConnection
@@ -177,7 +177,9 @@ public class ClientConnectionImpl implements ClientConnection
 			try {
 				buffer = transcoder.encode(packet);
 				
-			} catch (UnrecoverablePduException | RecoverablePduException e) {
+			} catch (UnrecoverablePduException e) {			
+				logger.error("Encode error: ", e);
+			} catch(RecoverablePduException e) {
 				logger.error("Encode error: ", e);
 			}
 
@@ -344,7 +346,9 @@ public class ClientConnectionImpl implements ClientConnection
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e ) {
+			logger.error("Encode error: ", e);
+		} catch (RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 
@@ -363,7 +367,9 @@ public class ClientConnectionImpl implements ClientConnection
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		} catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 
@@ -387,7 +393,9 @@ public class ClientConnectionImpl implements ClientConnection
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		} catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
@@ -409,7 +417,9 @@ public class ClientConnectionImpl implements ClientConnection
 		try {
 				buffer = transcoder.encode(packet);
 				
-			} catch (UnrecoverablePduException | RecoverablePduException e) {
+			} catch (UnrecoverablePduException e) {
+				logger.error("Encode error: ", e);
+			} catch(RecoverablePduException e){
 				logger.error("Encode error: ", e);
 			}
 			channel.write(buffer);
@@ -457,7 +467,9 @@ public class ClientConnectionImpl implements ClientConnection
 		try {
 			buffer = transcoder.encode(packet);
 			
-		} catch (UnrecoverablePduException | RecoverablePduException e) {
+		} catch (UnrecoverablePduException e) {
+			logger.error("Encode error: ", e);
+		} catch(RecoverablePduException e){
 			logger.error("Encode error: ", e);
 		}
 		channel.write(buffer);
@@ -468,7 +480,7 @@ public class ClientConnectionImpl implements ClientConnection
 	
 	public void closeChannel() 
 	{
-		while(channel.getPipeline().getLast()!=null)
+		if(channel.getPipeline().getLast()!=null)
 			channel.getPipeline().removeLast();
 		
 		channel.close();		

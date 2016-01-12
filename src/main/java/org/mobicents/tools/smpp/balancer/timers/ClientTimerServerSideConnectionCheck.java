@@ -1,6 +1,6 @@
-package com.mobiussoftware.smpplb.timers;
+package org.mobicents.tools.smpp.balancer.timers;
 
-import com.mobiussoftware.smpplb.api.ClientConnection;
+import org.mobicents.tools.smpp.balancer.api.ClientConnection;
 
 public class ClientTimerServerSideConnectionCheck implements CancellableRunnable
 {
